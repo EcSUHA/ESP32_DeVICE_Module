@@ -297,7 +297,7 @@ ProvidedByModule_t ESP32_Control_ProvidedByModule =
 
   ,ESP32_Control_Shutdown		// Shutdown
 
-  ,NULL					// State
+  ,ESP32_Control_State			// State
 
   ,NULL					// Sub
 
@@ -2995,6 +2995,64 @@ ESP32_Control_Set(Common_Definition_t* Common_Definition
   return retMsg;
 
   }
+
+
+
+/**
+ * -------------------------------------------------------------------------------------------------
+ *  FName: ESP32_Control_State
+ *  Desc: FN is called when a Definition of this Module gets an status update of readings. 
+ *        e.g. called from setstate cmd for status recovery from save
+ *  Info: An FN for State is optional!
+ *  Para: ESP32_Control_Definition_t *ESP32_Control_Definition -> Definition that gets an status update
+ *        time_t readingTiSt -> time stamp that should be associated to the reading value
+ *        uint8_t *readingName -> ptr to the reading name
+ *        size_t readingNameLen -> length of the reading name
+ *        uint8_t *readingValue -> ptr to the reading value
+ *        size_t readingValueLen -> length of the reading Value
+ *  Rets: strTextMultiple_t* -> response text in allocated memory, NULL=no text
+ * -------------------------------------------------------------------------------------------------
+ */
+strTextMultiple_t*
+ESP32_Control_State(Common_Definition_t *Common_Definition
+	,time_t readingTiSt
+	,uint8_t *readingName
+	,size_t readingNameLen
+	,uint8_t *readingValue
+	,size_t readingValueLen)
+{
+	
+  // for Fn response msg
+  strTextMultiple_t *multipleRetMsg = NULL;
+	
+  // make common ptr to modul specific ptr
+  ESP32_Control_Definition_t* ESP32_Control_Definition =
+		(ESP32_Control_Definition_t*) Common_Definition;
+
+ #if ESP32_Control_DBG >= 5
+  // prepare TiSt for LogFn
+  strText_t strText =
+  	SCDEFn->FmtDateTimeFn(readingTiSt);
+
+  SCDEFn->Log3Fn(Common_Definition->name
+	,Common_Definition->nameLen
+	,5
+	,"StateFn of Module '%.*s' is called for Definition '%.*s'. Reading '%.*s' should get new Value '%.*s' with TimeStamp '%.*s'."
+	,ESP32_Control_Definition->common.module->ProvidedByModule->typeNameLen
+	,ESP32_Control_Definition->common.module->ProvidedByModule->typeName
+	,readingName
+	,readingNameLen
+	,readingValueLen
+	,readingValue
+	,strText.strTextLen
+	,strText.strText);
+
+  // free TiSt from LogFn
+  free(strText.strText);
+#endif
+
+  return multipleRetMsg;
+}
 
 
 
