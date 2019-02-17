@@ -1,13 +1,19 @@
 ﻿/* #################################################################################################
  *
- *  Function: ESP32Control Module for SCDE (Smart Connected Device Engine)
+ *  ESP32_Control Module for SCDE (Smart Connected Device Engine)
+ *  ESP32_SoCControl Module for SCDE (Smart Connected Device Engine)
  *
- *  ESP 8266EX & ESP32 SOC Activities ...
- *  Copyright by EcSUHA
+ *  SoC -> SoC Feature.
+ *  It is used to Control the SoC (WiFi, ...).
+ *
  *
  *  Created by Maik Schulze, Sandfuhren 4, 38448 Wolfsburg, Germany for EcSUHA.de 
  *
  *  MSchulze780@GMAIL.COM
+ *  Copyright by EcSUHA
+ *
+ *  ESP 8266EX & ESP32 SOC Activities ...
+ *
  *  EcSUHA - ECONOMIC SURVEILLANCE AND HOME AUTOMATION - WWW.EcSUHA.DE
  * #################################################################################################
  */
@@ -41,6 +47,19 @@ static char tag[] = "ESP32Control";
 
 // -------------------------------------------------------------------------------------------------
 
+
+
+// -------------------------------------------------------------------------------------------------
+
+// set default build verbose - if no external override
+#ifndef ESP32_Control_Module_DBG  
+#define ESP32_Control_Module_DBG  5	// 5 is default
+#endif 
+
+// -------------------------------------------------------------------------------------------------
+
+
+
 // make data root locally available
 static SCDERoot_t* SCDERoot;
 
@@ -66,21 +85,26 @@ static SCDEFn_t* SCDEFn;
 
 
 
-// HTML GUI ELEMENTS
-SelectAData DisEn[]={  //ID, Text MAX CGI LEN BEACHTEN!!!
+/*
+ * Implemented Values for Keys
+ */
+
+SelectAData DisEn[] = {  //ID, Text MAX CGI LEN BEACHTEN!!!
   {0,"Disabled"},
   {1,"Enabled"}, 
   {0, NULL}
-  };
-SelectAData MaxConn[]={  //ID, Text MAX CGI LEN BEACHTEN!!!
+};
+
+SelectAData MaxConn[] = {  //ID, Text MAX CGI LEN BEACHTEN!!!
   {0,"1"},
   {1,"2"},
   {2,"3"},
   {3,"4"},
   {4,"5"},
   {0, NULL}
-  };
-SelectAData Channel[]={  //ID, Text MAX CGI LEN BEACHTEN!!!
+};
+
+SelectAData Channel[] = {  //ID, Text MAX CGI LEN BEACHTEN!!!
   {1,"CH_1"},
   {2,"CH_2"},
   {3,"CH_3"},
@@ -96,14 +120,15 @@ SelectAData Channel[]={  //ID, Text MAX CGI LEN BEACHTEN!!!
   {13,"CH_13"},
   {14,"CH_14"},
   {0, NULL}
-  };
+};
 
-SelectAData SSID_H[]={  //ID, Text MAX CGI LEN BEACHTEN!!!
+SelectAData SSID_H[] = {  //ID, Text MAX CGI LEN BEACHTEN!!!
   {0,"Visible"},
   {1,"Hidden"},
   {0, NULL}
-  };
-SelectAData NrAP[]={  //ID, Text MAX CGI LEN BEACHTEN!!!
+};
+
+SelectAData NrAP[] = {  //ID, Text MAX CGI LEN BEACHTEN!!!
   {0,"0"},
   {1,"1"},
   {2,"2"},
@@ -111,13 +136,14 @@ SelectAData NrAP[]={  //ID, Text MAX CGI LEN BEACHTEN!!!
   {4,"4"},
   {5,"5"},
   {0, NULL}
-  };
-SelectAData PhMode[]={  //ID, Text MAX CGI LEN BEACHTEN!!!
+};
+
+SelectAData PhMode[] = {  //ID, Text MAX CGI LEN BEACHTEN!!!
   {1,"802.11b"},
   {2,"802.11g"},
   {3,"802.11n"},
   {0, NULL}
-  };
+};
 
 SelectAData wifiCountry[] = {  //ID, Text MAX CGI LEN BEACHTEN!!!
   {0,"CN"},
@@ -125,7 +151,7 @@ SelectAData wifiCountry[] = {  //ID, Text MAX CGI LEN BEACHTEN!!!
   {2,"US"},
   {3,"EU"},
   {0, NULL}
-  };
+};
 
 SelectAData Auth_M[] = {  //authMode[] = {  //ID, Text MAX CGI LEN BEACHTEN!!!
   {0,"OPEN"},
@@ -135,14 +161,14 @@ SelectAData Auth_M[] = {  //authMode[] = {  //ID, Text MAX CGI LEN BEACHTEN!!!
   {4,"WPA_WPA2_PSK"},
   {5,"MAX"},
   {0, NULL}
-  };
+};
 
 SelectAData wifiBandwidth[] = {  //ID, Text MAX CGI LEN BEACHTEN!!!
   {0,"HT20"},
   {1,"HT40"},
   {2,"HT??"},
   {0, NULL}
-  };
+};
 
 
 
@@ -261,11 +287,12 @@ const WebIf_ActiveResourcesDataB_t ESP32_Control_ActiveResourcesDataB_forWebIf[]
  *  Data: 
  * -------------------------------------------------------------------------------------------------
  */
-ProvidedByModule_t ESP32_Control_ProvidedByModule =
-  { // A-Z order
+ProvidedByModule_t
+ESP32_Control_ProvidedByModule = {
+// A-Z order
 
   "ESP32_Control"			// Type-Name of module -> should be same name as libfilename.so !
-  ,13					// size of Type-Name
+  ,13				   	// size of Type-Name
 
   ,NULL					// Add
 
@@ -310,8 +337,7 @@ ProvidedByModule_t ESP32_Control_ProvidedByModule =
 //  ,NULL		 		// FnProvided
 
   ,sizeof(ESP32_Control_Definition_t)	// Size of modul specific definition structure (Common_Definition_t + X)
-
-  };
+};
 
 
 
@@ -3001,58 +3027,65 @@ ESP32_Control_Set(Common_Definition_t* Common_Definition
 /**
  * -------------------------------------------------------------------------------------------------
  *  FName: ESP32_Control_State
- *  Desc: FN is called when a Definition of this Module gets an status update of readings. 
- *        e.g. called from setstate cmd for status recovery from save
- *  Info: An FN for State is optional!
- *  Para: ESP32_Control_Definition_t *ESP32_Control_Definition -> Definition that gets an status update
- *        time_t readingTiSt -> time stamp that should be associated to the reading value
- *        uint8_t *readingName -> ptr to the reading name
- *        size_t readingNameLen -> length of the reading name
- *        uint8_t *readingValue -> ptr to the reading value
- *        size_t readingValueLen -> length of the reading Value
- *  Rets: strTextMultiple_t* -> response text in allocated memory, NULL=no text
+ *  Desc: FN is called when a Definition of this Module gets, and should set an state update. 
+ *        Normally called from setstate cmd when executing state (=readings?) recovery from save .cfg
+ *  Info: An FN for State in an Module is optional!
+ *  Para: const Common_Definition_t *ESP32_Control_Definition -> Definition that should execute an status update
+ *        const time_t stateTiSt -> time stamp for status update / reading value
+ *        const xString_t stateNameString -> state Name for status update / reading value
+ *        const xString_t stateValueString -> state Value for the status update / reading value
+ *        const xString_t stateMimeString -> state Mime for the status update / reading value
+ *  Rets: xMultipleStringSLTQE_t -> singly linked tail queue element which stores one xString_t string
+ *                                  as response text in allocated memory. NULL=no response text
  * -------------------------------------------------------------------------------------------------
  */
-strTextMultiple_t*
+xMultipleStringSLTQE_t*
 ESP32_Control_State(Common_Definition_t *Common_Definition
-	,time_t readingTiSt
-	,uint8_t *readingName
-	,size_t readingNameLen
-	,uint8_t *readingValue
-	,size_t readingValueLen)
+	,const time_t stateTiSt
+	,const xString_t stateNameString
+	,const xString_t stateValueString
+	,const xString_t stateMimeString)
 {
 	
-  // for Fn response msg
-  strTextMultiple_t *multipleRetMsg = NULL;
+  // Fn return message. NULL = no return message
+  xMultipleStringSLTQE_t *retMsgMultipleStringSLTQE = NULL;
 	
   // make common ptr to modul specific ptr
   ESP32_Control_Definition_t* ESP32_Control_Definition =
 		(ESP32_Control_Definition_t*) Common_Definition;
 
- #if ESP32_Control_DBG >= 5
-  // prepare TiSt for LogFn
-  strText_t strText =
-  	SCDEFn->FmtDateTimeFn(readingTiSt);
+// -------------------------------------------------------------------------------------------------
+
+  #if ESP32_Control_Module_DBG >= 5
+  // prepare TiSt-string for LogFn
+  strText_t timeString =
+  	SCDEFn->FmtDateTimeFn(stateTiSt);
 
   SCDEFn->Log3Fn(Common_Definition->name
 	,Common_Definition->nameLen
 	,5
-	,"StateFn of Module '%.*s' is called for Definition '%.*s'. Reading '%.*s' should get new Value '%.*s' with TimeStamp '%.*s'."
+	,"Executing StateFn of Module '%.*s' for Definition '%.*s'. "
+         "Should set State for '%.*s' with Value '%.*s' and Mime '%.*s'. TimeStamp '%.*s'."
 	,ESP32_Control_Definition->common.module->ProvidedByModule->typeNameLen
 	,ESP32_Control_Definition->common.module->ProvidedByModule->typeName
-	,readingName
-	,readingNameLen
-	,readingValueLen
-	,readingValue
-	,strText.strTextLen
-	,strText.strText);
+	,stateNameString.length
+	,stateNameString.characters
+	,stateValueString.length
+	,stateValueString.characters
+	,stateMimeString.length
+	,stateMimeString.characters
+	,timeString.strTextLen
+	,timeString.strText);
 
-  // free TiSt from LogFn
-  free(strText.strText);
-#endif
+  // free TiSt-string from LogFn
+  free(timeString.strText);
+  #endif
 
-  return multipleRetMsg;
+// -------------------------------------------------------------------------------------------------
+
+  return retMsgMultipleStringSLTQE;
 }
+
 
 
 
