@@ -117,6 +117,7 @@ SelectAData ESP32_DeVICE_MAX_CONN[] = {  //ID, Text MAX CGI LEN BEACHTEN!!!
 
 // ESP32_DeVICE_SET_CHANNEL -> 'CHANNEL' -> CH_1|CH_2|CH_3|CH_4|CH_5|CH_6|CH_7|CH_8|CH_9|CH_10|CH_11|CH_12|CH_13|CH_14
 SelectAData ESP32_DeVICE_CHANNEL[] = {  //ID, Text MAX CGI LEN BEACHTEN!!!
+  {0,"1_N"},
   {1,"CH_1"},
   {2,"CH_2"},
   {3,"CH_3"},
@@ -881,6 +882,8 @@ ESP32_DeVICE_Define(Common_Definition_t *Common_Definition)
 
   ESP_ERROR_CHECK( esp_wifi_set_config(WIFI_IF_STA, &sta_config) );
 
+
+  // s3.1: Call esp_wifi_start to start the Wi-Fi driver.
   ESP_ERROR_CHECK( esp_wifi_start() );
 
   ESP_ERROR_CHECK( esp_wifi_connect() );
