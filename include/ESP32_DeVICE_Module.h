@@ -3,12 +3,27 @@
 #ifndef ESP32_DEVICE_MODULE_H
 #define ESP32_DEVICE_MODULE_H
 
+// -------------------------------------------------------------------------------------------------
 
-
+// this Module is made for the Smart-Connected-Device-Engine
 #include "SCDE_s.h"
 
-
+// this Module provides functions for other Modules:
 #include "WebIf_Module global types.h"
+//#include "WebIf_Module_s.h"
+
+// this Module uses an 1st stage:
+// -- no ---
+
+// -------------------------------------------------------------------------------------------------
+
+// stores the Root Data of the Smart Connected Devices Engine - at/for this Module
+SCDERoot_t* SCDERoot_at_ESP32_DeVICE_M;
+
+// stores SCDEFn (Functions / callbacks) provided for operation - at/for this Module
+SCDEFn_t* SCDEFn_at_ESP32_DeVICE_M;
+
+// -------------------------------------------------------------------------------------------------
 
 
 
