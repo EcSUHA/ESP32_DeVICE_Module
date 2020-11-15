@@ -82,7 +82,7 @@ ReadFullFlash_cgi(WebIf_HTTPDConnSlotData_t *conn)
 	// all post data buffered? If not continue receiving all post data to buffer ...
 	if (conn->parser_content_length) return HTTPD_CGI_PROCESS_CONN;
 
-	Args = conn->postBuff;
+	Args = conn->p_body_data;
 	}
 
  // # if SCDE_WIFI_DBG >= 3
@@ -125,7 +125,7 @@ ReadFullFlash_cgi(WebIf_HTTPDConnSlotData_t *conn)
 	}
 
   // transfer next 1024 Byte Block
-  SCDED_Send(conn, (const char *)(*pos), 1024);
+  HTTPD_Send_To_Send_Buffer(conn, (const char *)(*pos), 1024);
 
   // increase TXed position
   *pos += 1024;
