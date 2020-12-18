@@ -1118,7 +1118,7 @@ ESP32_DeVICE_APST2_WSAP_cb(struct argparse *self
     wifi_mode = ( ((uint8_t) wifi_mode & 0b01) | (new_wifi_mode << 1) ) ;
 
     // mark argument as sucessfully parsed
-    self->parsedargsbf |= (1 << ESP32_DeVICE_Set_IK_WSAP);	
+    self->parsed_args_bf |= (1 << ESP32_DeVICE_Set_IK_WSAP);	
 
     return 0;	// OK
 
@@ -1183,7 +1183,7 @@ ESP32_DeVICE_APST2_Name_cb(struct argparse *self
   strncpy(&wifi_ap_config->ssid , **stage1Value, ssid_len);
 
   // mark argument as sucessfully parsed
-  self->parsedargsbf |= (1 << ESP32_DeVICE_Set_IK_Name);	
+  self->parsed_args_bf |= (1 << ESP32_DeVICE_Set_IK_Name);	
 
   return 0;	// OK
 }
@@ -1228,7 +1228,7 @@ ESP32_DeVICE_APST2_WSAP_Password_cb(struct argparse *self
   strcpy(&wifi_ap_config->password , **stage1Value);
 
   // mark argument as sucessfully parsed
-  self->parsedargsbf |= (1 << ESP32_DeVICE_Set_IK_WSAP_Password);	
+  self->parsed_args_bf |= (1 << ESP32_DeVICE_Set_IK_WSAP_Password);	
 
   return 0;	// OK
 }
@@ -1270,7 +1270,7 @@ ESP32_DeVICE_APST2_WSAP_RF_Channel_cb(struct argparse *self
     wifi_ap_config->channel = new_channel;
 
 	// mark argument as sucessfully parsed
-  	self->parsedargsbf |= (1 << ESP32_DeVICE_Set_IK_WSAP_RF_Channel);	
+  	self->parsed_args_bf |= (1 << ESP32_DeVICE_Set_IK_WSAP_RF_Channel);	
 
     return 0;	// OK
 
@@ -1321,7 +1321,7 @@ ESP32_DeVICE_APST2_WSAP_Authentication_Method_cb(struct argparse *self
     wifi_ap_config->authmode = new_authmode;
 
 	// mark argument as sucessfully parsed
-  	self->parsedargsbf |= (1 << ESP32_DeVICE_Set_IK_WSAP_Authentication_Method);	
+  	self->parsed_args_bf |= (1 << ESP32_DeVICE_Set_IK_WSAP_Authentication_Method);	
 
     return 0;	// OK
 
@@ -1372,7 +1372,7 @@ ESP32_DeVICE_APST2_WSAP_SSID_Visibility_cb(struct argparse *self
     wifi_ap_config->ssid_hidden = new_ssid_hidden;
 
 	// mark argument as sucessfully parsed
-  	self->parsedargsbf |= (1 << ESP32_DeVICE_Set_IK_WSAP_SSID_Visibility);	
+  	self->parsed_args_bf |= (1 << ESP32_DeVICE_Set_IK_WSAP_SSID_Visibility);	
 
     return 0;	// OK
 
@@ -1435,7 +1435,7 @@ ESP32_DeVICE_APST2_WSAP_Maximal_Connections_cb(struct argparse *self
   wifi_ap_config->max_connection = (uint8_t) new_max_connection;
 
   // mark argument as sucessfully parsed
-  self->parsedargsbf |= (1 << ESP32_DeVICE_Set_IK_WSAP_Maximal_Connections);	
+  self->parsed_args_bf |= (1 << ESP32_DeVICE_Set_IK_WSAP_Maximal_Connections);	
 
   return 0;	// OK
 }
@@ -1489,7 +1489,7 @@ ESP32_DeVICE_APST2_WSAP_Beacon_Interval_cb(struct argparse *self
   wifi_ap_config->beacon_interval = (uint16_t) new_beacon_interval;
 
   // mark argument as sucessfully parsed
-  self->parsedargsbf |= (1 << ESP32_DeVICE_Set_IK_WSAP_Beacon_Interval);	
+  self->parsed_args_bf |= (1 << ESP32_DeVICE_Set_IK_WSAP_Beacon_Interval);	
 
   return 0;	// OK
 }
@@ -1531,7 +1531,7 @@ ESP32_DeVICE_APST2_Station_cb(struct argparse *self
     wifi_mode = ( ((uint8_t) wifi_mode & 0b10) | new_wifi_mode ) ;
 
     // mark argument as sucessfully parsed
-    self->parsedargsbf |= (1 << ESP32_DeVICE_Set_IK_Station);	
+    self->parsed_args_bf |= (1 << ESP32_DeVICE_Set_IK_Station);	
 
     return 0;	// OK
 
@@ -1565,10 +1565,10 @@ ESP32_SwITCH_Set_H_cb(struct argparse *self
                 ,void *stage1Value)
 {
   // allocate mem to prepare ret msg
-  self->retMsg = malloc(sizeof(Entry_String_t));
+  self->ret_msg = malloc(sizeof(Entry_String_t));
 
   // generate concrete error msg - long_name
-  self->retMsg->string.len = asprintf(&self->retMsg->string.p_char,
+  self->ret_msg->string.len = asprintf(&self->ret_msg->string.p_char,
 	"?, from available: "
 	// Built-in Wireless-Service-Access-Point configuration
 	"WSAP:uzsuSelectRadio,DISABLED,ENABLED "
@@ -2066,59 +2066,59 @@ uint8_t country =2;
 
   // deep debug
   printf("\nDeep debugging, parsed args bf: %lld, listing parsed values:\n",
-  	 argparse.parsedargsbf);
+  	 argparse.parsed_args_bf);
 
   // debugout ssid aka name, if found ...
-  if (argparse.parsedargsbf & (1 << ESP32_DeVICE_Set_IK_Name) ) {
+  if (argparse.parsed_args_bf & (1 << ESP32_DeVICE_Set_IK_Name) ) {
   	printf("parsed name=%.*s\n"
 		,wifi_ap_config.ssid_len
 		,wifi_ap_config.ssid);
   }
 
   // debugout WSAP_Password, if found ...
-  if (argparse.parsedargsbf & (1 << ESP32_DeVICE_Set_IK_WSAP_Password) ) {
+  if (argparse.parsed_args_bf & (1 << ESP32_DeVICE_Set_IK_WSAP_Password) ) {
   	printf("parsed WSAP_Password=%s\n"
 		,wifi_ap_config.password);
   }
 
   // debugout WSAP_RF_Channel, if found ...
-  if (argparse.parsedargsbf & (1 << ESP32_DeVICE_Set_IK_WSAP_RF_Channel) ) {
+  if (argparse.parsed_args_bf & (1 << ESP32_DeVICE_Set_IK_WSAP_RF_Channel) ) {
   	printf("parsed WSAP_RF_Channel=%d\n"
 		,wifi_ap_config.channel);
   }
 
   // debugout WSAP_Authentication_Method, if found ...
-  if (argparse.parsedargsbf & (1 << ESP32_DeVICE_Set_IK_WSAP_Authentication_Method) ) {
+  if (argparse.parsed_args_bf & (1 << ESP32_DeVICE_Set_IK_WSAP_Authentication_Method) ) {
   	printf("WSAP_Authentication_Method=%d\n"
 		,wifi_ap_config.authmode);
   }
 
   // debugout WSAP_SSID_Visibility, if found ...
-  if (argparse.parsedargsbf & (1 << ESP32_DeVICE_Set_IK_WSAP_SSID_Visibility) ) {
+  if (argparse.parsed_args_bf & (1 << ESP32_DeVICE_Set_IK_WSAP_SSID_Visibility) ) {
   	printf("WSAP_SSID_Visibility=%d\n"
 		,wifi_ap_config.ssid_hidden);
   }
 
   // debugout WSAP_Maximal_Connections, if found ...
-  if (argparse.parsedargsbf & (1 << ESP32_DeVICE_Set_IK_WSAP_Maximal_Connections) ) {
+  if (argparse.parsed_args_bf & (1 << ESP32_DeVICE_Set_IK_WSAP_Maximal_Connections) ) {
   	printf("WSAP_Maximal_Connections=%d\n"
 		,wifi_ap_config.max_connection);
   }
 
   // debugout WSAP_Beacon_Interval, if found ...
-  if (argparse.parsedargsbf & (1 << ESP32_DeVICE_Set_IK_WSAP_Beacon_Interval) ) {
+  if (argparse.parsed_args_bf & (1 << ESP32_DeVICE_Set_IK_WSAP_Beacon_Interval) ) {
   	printf("WSAP_Beacon_Interval=%d\n"
 		,wifi_ap_config.beacon_interval);
   }
 
  // debugout WSAP, if found ...
-  if (argparse.parsedargsbf & (1 << ESP32_DeVICE_Set_IK_WSAP) ) {
+  if (argparse.parsed_args_bf & (1 << ESP32_DeVICE_Set_IK_WSAP) ) {
   	printf("WSAP=%d\n"
 		,( (uint8_t) wifi_mode & 0b10) >>1 );
   }
   
  // debugout Station, if found ...
-  if (argparse.parsedargsbf & (1 << ESP32_DeVICE_Set_IK_Station) ) {
+  if (argparse.parsed_args_bf & (1 << ESP32_DeVICE_Set_IK_Station) ) {
   	printf("Station=%d\n"
 
 		,((uint8_t) wifi_mode & 0b01) );
