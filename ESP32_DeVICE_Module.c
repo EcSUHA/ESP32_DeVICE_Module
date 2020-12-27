@@ -713,7 +713,7 @@ ESP32_DeVICE_ProvidedByModule = { 	// A-Z order
   ,ESP32_DeVICE_Get					// Get
   ,NULL								// IdleCb
   ,ESP32_DeVICE_Initialize			// Initialize
-  ,NULL								// Notify
+  ,ESP32_DeVICE_Notify				// Notify
   ,NULL								// Parse
   ,NULL								// Read
   ,NULL								// Ready
@@ -743,7 +743,7 @@ ESP32_DeVICE_ProvidedByModule = { 	// A-Z order
  *  Rets: Entry_String_t* -> = SCDE_OK (no ret msg) or VETO (SLTQ Entry_String_t* with ret msg)
  * -------------------------------------------------------------------------------------------------
  */
-Entry_String_t* ICACHE_FLASH_ATTR
+Entry_String_t *
 ESP32_DeVICE_Attribute(Common_Definition_t* p_entry_definition,
 	 const String_t attr_command,
 	 const String_t attr_name,
@@ -814,15 +814,15 @@ ESP32_DeVICE_Define(Common_Definition_t *Common_Definition)
 	,ESP32_DeVICE_Definition->common.module->provided->typeName
 	,ESP32_DeVICE_Definition->common.nameLen
 	,ESP32_DeVICE_Definition->common.name
-	,ESP32_DeVICE_Definition->common.definitionLen
-	,ESP32_DeVICE_Definition->common.definition);
+	,ESP32_DeVICE_Definition->common.definition.len
+	,ESP32_DeVICE_Definition->common.definition.p_char);
   #endif
 
 // ------------------------------------------------------------------------------------------------
 
   // new conversation
-  uint8_t *defArgsText = Common_Definition->definition;
-  size_t defArgsTextLen = Common_Definition->definitionLen;
+  uint8_t *defArgsText = Common_Definition->definition.p_char;
+  size_t defArgsTextLen = Common_Definition->definition.len;
 
   // Check for args. This type requires args...
   if (!defArgsTextLen) {
@@ -1027,42 +1027,6 @@ ESP32_DeVICE_Definition->common.ActiveResourcesDataB = &ESP32_DeVICE_ActiveResou
   return retMsg;
 }
 
-
-
-/**
- * -------------------------------------------------------------------------------------------------
- *  FName: ESP32_DeVICE_Initialize
- *  Desc: Initializion of SCDE Function Callbacks of an new loaded module
- *  Info: Stores Module-Information (Function Callbacks) to SCDE-Root
- *  Para: SCDERoot_t* SCDERootptr -> ptr to SCDE Data Root
- *  Rets: ? unused
- *--------------------------------------------------------------------------------------------------
- */
-int 
-ESP32_DeVICE_Initialize(SCDERoot_t* SCDERootptr)
-{
-
-  // make data root locally available
-  SCDERoot_at_ESP32_DeVICE_M = SCDERootptr;
-
-  // make locally available from data-root: SCDEFn (Functions / callbacks) for faster operation
-  SCDEFn_at_ESP32_DeVICE_M = SCDERootptr->SCDEFn;
-
-// -------------------------------------------------------------------------------------------------
-
-  #if ESP32_DeVICE_Module_DBG >= 3
-  SCDEFn_at_ESP32_DeVICE_M->Log3Fn(ESP32_DeVICE_ProvidedByModule.typeName
-	,ESP32_DeVICE_ProvidedByModule.typeNameLen
-	,3
-	,"Executing InitializeFn of Module '%.*s' to make it useable."
-	,ESP32_DeVICE_ProvidedByModule.typeNameLen
-	,ESP32_DeVICE_ProvidedByModule.typeName);
-  #endif
-
-// -------------------------------------------------------------------------------------------------
-
-  return 0;
-}
 
 
 
@@ -2230,30 +2194,46 @@ Was wir brauchen:
 
   // update the Readings according to 'affectedReadings' - if any ...
   if (affectedReadings) {
+  
+    // temp, for reading creation
+    String_t reading_name;
+    String_t reading_value;
 
-	SCDEFn_at_ESP32_DeVICE_M->readingsBeginUpdateFn((Common_Definition_t*) p_ESP32_DeVICE_Definition);
+	SCDEFn_at_ESP32_DeVICE_M->readings_begin_update_fn((Common_Definition_t*) p_ESP32_DeVICE_Definition);
 
 // ------------------------------------------------------------------------------------------------- 
 
 	// Reading 'Name'
 	if (affectedReadings & ESP32_DeVICE_R_Name) {
 
+	    reading_name.len = strlen((const char *) ESP32_DeVICE_Set_ImplementedKeys[ESP32_DeVICE_Set_IK_Name].implementedKey);
+	    reading_name.p_char = (const uint8_t *) ESP32_DeVICE_Set_ImplementedKeys[ESP32_DeVICE_Set_IK_Station_Auto_Connect].implementedKey;
+	    reading_value.len = wifi_ap_config.ssid_len;
+	    reading_value.p_char = wifi_ap_config.ssid;
+		
+	    SCDEFn_at_ESP32_DeVICE_M->readings_bulk_update_fn((Common_Definition_t*) p_ESP32_DeVICE_Definition
+		    ,reading_name
+		    ,reading_value
+		    ,true,0);
+
+
+/*
 		// create / update reading
-		SCDEFn_at_ESP32_DeVICE_M->readingsBulkUpdate2Fn((Common_Definition_t*) p_ESP32_DeVICE_Definition
+		SCDEFn_at_ESP32_DeVICE_M->readings_bulk_update2_fn((Common_Definition_t*) p_ESP32_DeVICE_Definition
 			,strlen((const char *) ESP32_DeVICE_Set_ImplementedKeys[ESP32_DeVICE_Set_IK_Name].implementedKey)
 			,(const uint8_t *) ESP32_DeVICE_Set_ImplementedKeys[ESP32_DeVICE_Set_IK_Name].implementedKey
 			,wifi_ap_config.ssid_len
 			,wifi_ap_config.ssid
-			,true);
+			,true);*/
 	}
 
 // -------------------------------------------------------------------------------------------------
-
+/*
 	// Reading 'WSAP_Password'
 	if (affectedReadings & ESP32_DeVICE_R_WSAP_Password) {
 
 		// create / update reading
-		SCDEFn_at_ESP32_DeVICE_M->readingsBulkUpdate2Fn((Common_Definition_t*) p_ESP32_DeVICE_Definition
+		SCDEFn_at_ESP32_DeVICE_M->readings_bulk_update2_fn((Common_Definition_t*) p_ESP32_DeVICE_Definition
 			,strlen((const char *) ESP32_DeVICE_Set_ImplementedKeys[ESP32_DeVICE_Set_IK_WSAP_Password].implementedKey)
 			,(const uint8_t *) ESP32_DeVICE_Set_ImplementedKeys[ESP32_DeVICE_Set_IK_WSAP_Password].implementedKey
 			,strlen((char *) wifi_ap_config.password)
@@ -2267,7 +2247,7 @@ Was wir brauchen:
 	if (affectedReadings & ESP32_DeVICE_R_WSAP_RF_Channel) {
 
 		// create / update reading
-		SCDEFn_at_ESP32_DeVICE_M->readingsBulkUpdate2Fn((Common_Definition_t*) p_ESP32_DeVICE_Definition
+		SCDEFn_at_ESP32_DeVICE_M->readings_bulk_update2_fn((Common_Definition_t*) p_ESP32_DeVICE_Definition
 			,strlen((const char *) ESP32_DeVICE_Set_ImplementedKeys[ESP32_DeVICE_Set_IK_WSAP_RF_Channel].implementedKey)
 			,(const uint8_t *) ESP32_DeVICE_Set_ImplementedKeys[ESP32_DeVICE_Set_IK_WSAP_RF_Channel].implementedKey
 			,strlen(SCDE_GetDesc(ESP32_DeVICE_CHANNEL, wifi_ap_config.channel))
@@ -2287,7 +2267,7 @@ Was wir brauchen:
 			,wifi_ap_config.max_connection);
 
 		// create / update reading
-		SCDEFn_at_ESP32_DeVICE_M->readingsBulkUpdate2Fn((Common_Definition_t*) p_ESP32_DeVICE_Definition
+		SCDEFn_at_ESP32_DeVICE_M->readings_bulk_update2_fn((Common_Definition_t*) p_ESP32_DeVICE_Definition
 			,strlen((const char *) ESP32_DeVICE_Set_ImplementedKeys[ESP32_DeVICE_Set_IK_WSAP_Maximal_Connections].implementedKey)
 			,(const uint8_t *) ESP32_DeVICE_Set_ImplementedKeys[ESP32_DeVICE_Set_IK_WSAP_Maximal_Connections].implementedKey
 			,WSAP_Maximal_Connections.len
@@ -2303,7 +2283,7 @@ Was wir brauchen:
 	if (affectedReadings & ESP32_DeVICE_R_WSAP_Authentication_Method) {
 
  		// create / update reading
-		SCDEFn_at_ESP32_DeVICE_M->readingsBulkUpdate2Fn((Common_Definition_t*) p_ESP32_DeVICE_Definition
+		SCDEFn_at_ESP32_DeVICE_M->readings_bulk_update2_fn((Common_Definition_t*) p_ESP32_DeVICE_Definition
 			,strlen((const char *) ESP32_DeVICE_Set_ImplementedKeys[ESP32_DeVICE_Set_IK_WSAP_Authentication_Method].implementedKey)
 			,(const uint8_t *) ESP32_DeVICE_Set_ImplementedKeys[ESP32_DeVICE_Set_IK_WSAP_Authentication_Method].implementedKey
 			,strlen(SCDE_GetDesc(ESP32_DeVICE_AUTH_MODE, wifi_ap_config.ssid_hidden))
@@ -2317,7 +2297,7 @@ Was wir brauchen:
 	if (affectedReadings & ESP32_DeVICE_R_WSAP_SSID_Visibility) {
 
 		// create / update reading
-		SCDEFn_at_ESP32_DeVICE_M->readingsBulkUpdate2Fn((Common_Definition_t*) p_ESP32_DeVICE_Definition
+		SCDEFn_at_ESP32_DeVICE_M->readings_bulk_update2_fn((Common_Definition_t*) p_ESP32_DeVICE_Definition
 			,strlen((const char *) ESP32_DeVICE_Set_ImplementedKeys[ESP32_DeVICE_Set_IK_WSAP_SSID_Visibility].implementedKey)
 			,(const uint8_t *) ESP32_DeVICE_Set_ImplementedKeys[ESP32_DeVICE_Set_IK_WSAP_SSID_Visibility].implementedKey
 			,strlen(SCDE_GetDesc(ESP32_DeVICE_SSID_VISIBILITY, wifi_ap_config.authmode))
@@ -2337,7 +2317,7 @@ Was wir brauchen:
 			,wifi_ap_config.beacon_interval);
 
 		// create / update reading
-		SCDEFn_at_ESP32_DeVICE_M->readingsBulkUpdate2Fn((Common_Definition_t*) p_ESP32_DeVICE_Definition
+		SCDEFn_at_ESP32_DeVICE_M->readings_bulk_update2_fn((Common_Definition_t*) p_ESP32_DeVICE_Definition
 			,strlen((const char *) ESP32_DeVICE_Set_ImplementedKeys[ESP32_DeVICE_Set_IK_WSAP_Beacon_Interval].implementedKey)
 			,(const uint8_t *) ESP32_DeVICE_Set_ImplementedKeys[ESP32_DeVICE_Set_IK_WSAP_Beacon_Interval].implementedKey
 			,WSAP_Beacon_Interval.len
@@ -2353,7 +2333,7 @@ Was wir brauchen:
 	if (affectedReadings & ESP32_DeVICE_R_WSAP) {
 
 		// create / update reading
-		SCDEFn_at_ESP32_DeVICE_M->readingsBulkUpdate2Fn((Common_Definition_t*) p_ESP32_DeVICE_Definition
+		SCDEFn_at_ESP32_DeVICE_M->readings_bulk_update2_fn((Common_Definition_t*) p_ESP32_DeVICE_Definition
 			,strlen((const char *) ESP32_DeVICE_Set_ImplementedKeys[ESP32_DeVICE_Set_IK_WSAP].implementedKey)
 			,(const uint8_t *) ESP32_DeVICE_Set_ImplementedKeys[ESP32_DeVICE_Set_IK_WSAP].implementedKey
 			,strlen(SCDE_GetDesc(ESP32_DeVICE_DisEn, (( (uint8_t) wifi_mode & 0b10) >>1 ) ))
@@ -2367,17 +2347,17 @@ Was wir brauchen:
 	if (affectedReadings & ESP32_DeVICE_R_Station) {
 
 		// create / update reading
-		SCDEFn_at_ESP32_DeVICE_M->readingsBulkUpdate2Fn((Common_Definition_t*) p_ESP32_DeVICE_Definition
+		SCDEFn_at_ESP32_DeVICE_M->readings_bulk_update2_fn((Common_Definition_t*) p_ESP32_DeVICE_Definition
 			,strlen((const char *) ESP32_DeVICE_Set_ImplementedKeys[ESP32_DeVICE_Set_IK_Station].implementedKey)
 			,(const uint8_t *) ESP32_DeVICE_Set_ImplementedKeys[ESP32_DeVICE_Set_IK_Station].implementedKey
 			,strlen(SCDE_GetDesc(ESP32_DeVICE_DisEn, ((uint8_t) wifi_mode & 0b01) ))
 			,(const uint8_t *) SCDE_GetDesc(ESP32_DeVICE_DisEn, ((uint8_t) wifi_mode & 0b01) )
 			,true);
 	}
-	
+*/
 // -------------------------------------------------------------------------------------------------
 
-  SCDEFn_at_ESP32_DeVICE_M->readingsEndUpdateFn((Common_Definition_t*) p_ESP32_DeVICE_Definition, true);
+  SCDEFn_at_ESP32_DeVICE_M->readings_end_update_fn((Common_Definition_t*) p_ESP32_DeVICE_Definition, true);
   }
 
 
@@ -2408,8 +2388,6 @@ error2:
 
   return p_retMsg;
 }
-
-
 
 
 
@@ -2556,9 +2534,108 @@ printf("HELP-callback\n");
 
 
 
+/**
+ * -------------------------------------------------------------------------------------------------
+ *  FName: Initialize Fn
+ *  Desc: Initializion of SCDE Function Callbacks of an new loaded module
+ *  Info: Stores Module-Information (Function Callbacks) to SCDE-Root
+ *  Para: SCDERoot_t* SCDERootptr -> ptr to SCDE Data Root
+ *  Rets: ? unused
+ *--------------------------------------------------------------------------------------------------
+ */
+int 
+ESP32_DeVICE_Initialize(SCDERoot_t* SCDERootptr)
+{
+  // make data root locally available
+  SCDERoot_at_ESP32_DeVICE_M = SCDERootptr;
+
+  // make locally available from data-root: SCDEFn (Functions / callbacks) for faster operation
+  SCDEFn_at_ESP32_DeVICE_M = SCDERootptr->SCDEFn;
+
+// -------------------------------------------------------------------------------------------------
+
+  #if ESP32_DeVICE_Module_DBG >= 3
+  SCDEFn_at_ESP32_DeVICE_M->Log3Fn(
+       ESP32_DeVICE_ProvidedByModule.typeName
+	  ,ESP32_DeVICE_ProvidedByModule.typeNameLen
+	  ,3
+	  ,"Executing InitializeFn of Module '%.*s' to make it useable."
+	  ,ESP32_DeVICE_ProvidedByModule.typeNameLen
+	  ,ESP32_DeVICE_ProvidedByModule.typeName);
+  #endif
+
+// -------------------------------------------------------------------------------------------------
+
+  return 0;
+}
 
 
 
+/* -------------------------------------------------------------------------------------------------
+ *  FName: Notify Fn
+ *  Desc: Informs an 'definition' of this 'module' for 'reading' and 'state' changes
+ *  Info: 
+ *  Para: Entry_Common_Definition_t *p_notifying_entry_common_definition -> the 'definition' identified for the activities
+ *	      Entry_Common_Definition_t *p_own_entry_common_definition -> the 'definition' identified for the activities
+ *  Rets: Entry_String_t* -> = SCDE_OK (no ret msg) or SLTQ Entry_String_t* with ret msg
+ * -------------------------------------------------------------------------------------------------
+ */
+Entry_String_t *
+ESP32_DeVICE_Notify(Entry_Common_Definition_t *p_notifying_entry_common_definition,
+    Entry_Common_Definition_t *p_own_entry_common_definition)
+{
+  // make common ptr to modul specific ptr
+  Entry_ESP32_DeVICE_Definition_t* p_entry_esp32_device_definition =
+		  (Entry_ESP32_DeVICE_Definition_t*) p_own_entry_common_definition;
+
+  // to store the ret_msg. SCDE_OK = no msg 
+  Entry_String_t *p_entry_ret_msg = SCDE_OK;
+
+// -------------------------------------------------------------------------------------------------
+
+  #if ESP32_DeVICE_Module_DBG >= 5
+  SCDEFn_at_ESP32_DeVICE_M->Log3Fn(p_entry_esp32_device_definition->common.name,
+	p_entry_esp32_device_definition->common.nameLen,
+	5,
+	"Notify Fn (Module '%.*s') is called. Definition '%.*s' (Module '%.*s') informs about pending notifies.",
+	p_entry_esp32_device_definition->common.module->provided->typeNameLen,
+	p_entry_esp32_device_definition->common.module->provided->typeName,
+	p_notifying_entry_common_definition->nname.len,
+	p_notifying_entry_common_definition->nname.p_char,
+	p_notifying_entry_common_definition->module->provided->typeNameLen,
+	p_notifying_entry_common_definition->module->provided->typeName);
+  #endif
+
+// ------------------------------------------------------------------------------------------------
+
+  string_t td_string = 
+      SCDEFn_at_ESP32_DeVICE_M->get_formated_date_time_fn(p_notifying_entry_common_definition->p_changed->update_timestamp); 
+  printf("List of notifys (common timestamp '%.*s') from definition '%.*s':\n",
+      td_string.len,
+      td_string.p_char,
+      p_notifying_entry_common_definition->nname.len,
+	  p_notifying_entry_common_definition->nname.p_char);
+  free(td_string.p_char);
+   
+  // list currently added readings stored for processing
+  entry_notify_t *p_current_entry_notify;
+  STAILQ_FOREACH(p_current_entry_notify, &p_notifying_entry_common_definition->p_changed->head_notifies, entries) {
+  	
+      string_t td_string = SCDEFn_at_ESP32_DeVICE_M->get_formated_date_time_fn(p_current_entry_notify->notify.timestamp);
+	  printf("L  %.*s | %.*s = %.*s\n"
+	      ,td_string.len
+		  ,td_string.p_char
+		  ,p_current_entry_notify->notify.name.len
+		  ,p_current_entry_notify->notify.name.p_char
+		  ,p_current_entry_notify->notify.value.len
+		  ,p_current_entry_notify->notify.value.p_char);	
+	  free(td_string.p_char);
+  }
+
+// -------------------------------------------------------------------------------------------------
+
+  return p_entry_ret_msg;
+}
 
 
 
@@ -2914,8 +2991,8 @@ ESP32_DeVICE_State(Common_Definition_t *Common_Definition
 
   #if ESP32_DeVICE_Module_DBG >= 5
   // prepare TiSt-string for LogFn
-  strText_t timeString =
-  	SCDEFn_at_ESP32_DeVICE_M->FmtDateTimeFn(stateTiSt);
+  string_t timeString =
+  	SCDEFn_at_ESP32_DeVICE_M->get_formated_date_time_fn(stateTiSt);
 
   SCDEFn_at_ESP32_DeVICE_M->Log3Fn(Common_Definition->name
 	,Common_Definition->nameLen
@@ -2932,11 +3009,11 @@ ESP32_DeVICE_State(Common_Definition_t *Common_Definition
 	,stateValueString.p_char
 	,stateMimeString.len
 	,stateMimeString.p_char
-	,timeString.strTextLen
-	,timeString.strText);
+	,timeString.len
+	,timeString.p_char);
 
   // free TiSt-string from LogFn
-  free(timeString.strText);
+  free(timeString.p_char);
   #endif
 
 /*
@@ -4712,15 +4789,15 @@ printf ("XG");
   // update the Readings according to 'affectedReadings' - if any ...
   if (affectedReadings) {
 
-	SCDEFn_at_ESP32_DeVICE_M->readingsBeginUpdateFn((Common_Definition_t*) ESP32_DeVICE_Definition);
+	SCDEFn_at_ESP32_DeVICE_M->readings_begin_update_fn((Common_Definition_t*) ESP32_DeVICE_Definition);
 
 // ------------------------------------------------------------------------------------------------- 
-
+/*
 	// Reading 'Name'
 	if (affectedReadings & ESP32_DeVICE_R_Name) {
 
 		// create / update reading
-		SCDEFn_at_ESP32_DeVICE_M->readingsBulkUpdate2Fn((Common_Definition_t*) ESP32_DeVICE_Definition
+		SCDEFn_at_ESP32_DeVICE_M->readings_bulk_update2_fn((Common_Definition_t*) ESP32_DeVICE_Definition
 			,strlen((const char *) ESP32_DeVICE_Set_ImplementedKeys[ESP32_DeVICE_Set_IK_Name].implementedKey)
 			,(const uint8_t *) ESP32_DeVICE_Set_ImplementedKeys[ESP32_DeVICE_Set_IK_Name].implementedKey
 			,parsedKVInput->keyData_t[ESP32_DeVICE_Set_IK_Name].len
@@ -4732,6 +4809,8 @@ printf ("XG");
 
 	// Reading 'WSAP_Password'
 	if (affectedReadings & ESP32_DeVICE_R_WSAP_Password) {
+*/
+
 
 /*
 WSAP_Password->nameString.length = strlen((const char *) ESP32_DeVICE_Set_ImplementedKeys[ESP32_DeVICE_Set_IK_WSAP_Password].implementedKey);
@@ -4743,8 +4822,11 @@ WSAP_Password->valueString.characters = argsText+parsedKVInput->keyData_t[ESP32_
 WSAP_Password->valueString.length = parsedKVInput->keyData_t[ESP32_DeVICE_Set_IK_WSAP_Password].len;
 */
 
+
+
+/*
 		// create / update reading
-		SCDEFn_at_ESP32_DeVICE_M->readingsBulkUpdate2Fn((Common_Definition_t*) ESP32_DeVICE_Definition
+		SCDEFn_at_ESP32_DeVICE_M->readings_bulk_update2_fn((Common_Definition_t*) ESP32_DeVICE_Definition
 			,strlen((const char *) ESP32_DeVICE_Set_ImplementedKeys[ESP32_DeVICE_Set_IK_WSAP_Password].implementedKey)
 			,(const uint8_t *) ESP32_DeVICE_Set_ImplementedKeys[ESP32_DeVICE_Set_IK_WSAP_Password].implementedKey
 			,parsedKVInput->keyData_t[ESP32_DeVICE_Set_IK_WSAP_Password].len
@@ -4758,7 +4840,7 @@ WSAP_Password->valueString.length = parsedKVInput->keyData_t[ESP32_DeVICE_Set_IK
 	if (affectedReadings & ESP32_DeVICE_R_WSAP_RF_Channel) {
 
 		// create / update reading
-		SCDEFn_at_ESP32_DeVICE_M->readingsBulkUpdate2Fn((Common_Definition_t*) ESP32_DeVICE_Definition
+		SCDEFn_at_ESP32_DeVICE_M->readings_bulk_update2_fn((Common_Definition_t*) ESP32_DeVICE_Definition
 			,strlen((const char *) ESP32_DeVICE_Set_ImplementedKeys[ESP32_DeVICE_Set_IK_WSAP_RF_Channel].implementedKey)
 			,(const uint8_t *) ESP32_DeVICE_Set_ImplementedKeys[ESP32_DeVICE_Set_IK_WSAP_RF_Channel].implementedKey
 			,parsedKVInput->keyData_t[ESP32_DeVICE_Set_IK_WSAP_RF_Channel].len
@@ -4772,7 +4854,7 @@ WSAP_Password->valueString.length = parsedKVInput->keyData_t[ESP32_DeVICE_Set_IK
 	if (affectedReadings & ESP32_DeVICE_R_WSAP_Maximal_Connections) {
 
 		// create / update reading
-		SCDEFn_at_ESP32_DeVICE_M->readingsBulkUpdate2Fn((Common_Definition_t*) ESP32_DeVICE_Definition
+		SCDEFn_at_ESP32_DeVICE_M->readings_bulk_update2_fn((Common_Definition_t*) ESP32_DeVICE_Definition
 			,strlen((const char *) ESP32_DeVICE_Set_ImplementedKeys[ESP32_DeVICE_Set_IK_WSAP_Maximal_Connections].implementedKey)
 			,(const uint8_t *) ESP32_DeVICE_Set_ImplementedKeys[ESP32_DeVICE_Set_IK_WSAP_Maximal_Connections].implementedKey
 			,parsedKVInput->keyData_t[ESP32_DeVICE_Set_IK_WSAP_Maximal_Connections].len
@@ -4786,7 +4868,7 @@ WSAP_Password->valueString.length = parsedKVInput->keyData_t[ESP32_DeVICE_Set_IK
 	if (affectedReadings & ESP32_DeVICE_R_WSAP_Authentication_Method) {
 
  		// create / update reading
-		SCDEFn_at_ESP32_DeVICE_M->readingsBulkUpdate2Fn((Common_Definition_t*) ESP32_DeVICE_Definition
+		SCDEFn_at_ESP32_DeVICE_M->readings_bulk_update2_fn((Common_Definition_t*) ESP32_DeVICE_Definition
 			,strlen((const char *) ESP32_DeVICE_Set_ImplementedKeys[ESP32_DeVICE_Set_IK_WSAP_Authentication_Method].implementedKey)
 			,(const uint8_t *) ESP32_DeVICE_Set_ImplementedKeys[ESP32_DeVICE_Set_IK_WSAP_Authentication_Method].implementedKey
 			,parsedKVInput->keyData_t[ESP32_DeVICE_Set_IK_WSAP_Authentication_Method].len
@@ -4800,7 +4882,7 @@ WSAP_Password->valueString.length = parsedKVInput->keyData_t[ESP32_DeVICE_Set_IK
 	if (affectedReadings & ESP32_DeVICE_R_WSAP_SSID_Visibility) {
 
 		// create / update reading
-		SCDEFn_at_ESP32_DeVICE_M->readingsBulkUpdate2Fn((Common_Definition_t*) ESP32_DeVICE_Definition
+		SCDEFn_at_ESP32_DeVICE_M->readings_bulk_update2_fn((Common_Definition_t*) ESP32_DeVICE_Definition
 			,strlen((const char *) ESP32_DeVICE_Set_ImplementedKeys[ESP32_DeVICE_Set_IK_WSAP_SSID_Visibility].implementedKey)
 			,(const uint8_t *) ESP32_DeVICE_Set_ImplementedKeys[ESP32_DeVICE_Set_IK_WSAP_SSID_Visibility].implementedKey
 			,parsedKVInput->keyData_t[ESP32_DeVICE_Set_IK_WSAP_SSID_Visibility].len
@@ -4814,7 +4896,7 @@ WSAP_Password->valueString.length = parsedKVInput->keyData_t[ESP32_DeVICE_Set_IK
 	if (affectedReadings & ESP32_DeVICE_R_WSAP_Beacon_Interval) {
 
 		// create / update reading
-		SCDEFn_at_ESP32_DeVICE_M->readingsBulkUpdate2Fn((Common_Definition_t*) ESP32_DeVICE_Definition
+		SCDEFn_at_ESP32_DeVICE_M->readings_bulk_update2_fn((Common_Definition_t*) ESP32_DeVICE_Definition
 			,strlen((const char *) ESP32_DeVICE_Set_ImplementedKeys[ESP32_DeVICE_Set_IK_WSAP_Beacon_Interval].implementedKey)
 			,(const uint8_t *) ESP32_DeVICE_Set_ImplementedKeys[ESP32_DeVICE_Set_IK_WSAP_Beacon_Interval].implementedKey
 			,parsedKVInput->keyData_t[ESP32_DeVICE_Set_IK_WSAP_Beacon_Interval].len
@@ -4828,7 +4910,7 @@ WSAP_Password->valueString.length = parsedKVInput->keyData_t[ESP32_DeVICE_Set_IK
 	if (affectedReadings & ESP32_DeVICE_R_WSAP_IP_Adress) {
 
 		// create / update reading
-		SCDEFn_at_ESP32_DeVICE_M->readingsBulkUpdate2Fn((Common_Definition_t*) ESP32_DeVICE_Definition
+		SCDEFn_at_ESP32_DeVICE_M->readings_bulk_update2_fn((Common_Definition_t*) ESP32_DeVICE_Definition
 			,strlen((const char *) ESP32_DeVICE_Set_ImplementedKeys[ESP32_DeVICE_Set_IK_WSAP_IP_Adress].implementedKey)
 			,(const uint8_t *) ESP32_DeVICE_Set_ImplementedKeys[ESP32_DeVICE_Set_IK_WSAP_IP_Adress].implementedKey
 			,parsedKVInput->keyData_t[ESP32_DeVICE_Set_IK_WSAP_IP_Adress].len
@@ -4842,7 +4924,7 @@ WSAP_Password->valueString.length = parsedKVInput->keyData_t[ESP32_DeVICE_Set_IK
 	if (affectedReadings & ESP32_DeVICE_R_WSAP_Netmask) {
 
 		// create / update reading
-		SCDEFn_at_ESP32_DeVICE_M->readingsBulkUpdate2Fn((Common_Definition_t*) ESP32_DeVICE_Definition
+		SCDEFn_at_ESP32_DeVICE_M->readings_bulk_update2_fn((Common_Definition_t*) ESP32_DeVICE_Definition
 			,strlen((const char *) ESP32_DeVICE_Set_ImplementedKeys[ESP32_DeVICE_Set_IK_WSAP_Netmask].implementedKey)
 			,(const uint8_t *) ESP32_DeVICE_Set_ImplementedKeys[ESP32_DeVICE_Set_IK_WSAP_Netmask].implementedKey
 			,parsedKVInput->keyData_t[ESP32_DeVICE_Set_IK_WSAP_Netmask].len
@@ -4856,7 +4938,7 @@ WSAP_Password->valueString.length = parsedKVInput->keyData_t[ESP32_DeVICE_Set_IK
 	if (affectedReadings & ESP32_DeVICE_R_WSAP_Gateway_Adress) {
 
 		// create / update reading
-		SCDEFn_at_ESP32_DeVICE_M->readingsBulkUpdate2Fn((Common_Definition_t*) ESP32_DeVICE_Definition
+		SCDEFn_at_ESP32_DeVICE_M->readings_bulk_update2_fn((Common_Definition_t*) ESP32_DeVICE_Definition
 			,strlen((const char *) ESP32_DeVICE_Set_ImplementedKeys[ESP32_DeVICE_Set_IK_WSAP_Gateway_Adress].implementedKey)
 			,(const uint8_t *) ESP32_DeVICE_Set_ImplementedKeys[ESP32_DeVICE_Set_IK_WSAP_Gateway_Adress].implementedKey
 			,parsedKVInput->keyData_t[ESP32_DeVICE_Set_IK_WSAP_Gateway_Adress].len
@@ -4870,7 +4952,7 @@ WSAP_Password->valueString.length = parsedKVInput->keyData_t[ESP32_DeVICE_Set_IK
 	if (affectedReadings & ESP32_DeVICE_R_WSAP_MAC_Adress) {
 
 		// create / update reading
-		SCDEFn_at_ESP32_DeVICE_M->readingsBulkUpdate2Fn((Common_Definition_t*) ESP32_DeVICE_Definition
+		SCDEFn_at_ESP32_DeVICE_M->readings_bulk_update2_fn((Common_Definition_t*) ESP32_DeVICE_Definition
 			,strlen((const char *) ESP32_DeVICE_Set_ImplementedKeys[ESP32_DeVICE_Set_IK_WSAP_MAC_Adress].implementedKey)
 			,(const uint8_t *) ESP32_DeVICE_Set_ImplementedKeys[ESP32_DeVICE_Set_IK_WSAP_MAC_Adress].implementedKey
 			,parsedKVInput->keyData_t[ESP32_DeVICE_Set_IK_WSAP_MAC_Adress].len
@@ -4884,7 +4966,7 @@ WSAP_Password->valueString.length = parsedKVInput->keyData_t[ESP32_DeVICE_Set_IK
 	if (affectedReadings & ESP32_DeVICE_R_WSAP_WiFi_Bandwidth) {
 
 		// create / update reading
-		SCDEFn_at_ESP32_DeVICE_M->readingsBulkUpdate2Fn((Common_Definition_t*) ESP32_DeVICE_Definition
+		SCDEFn_at_ESP32_DeVICE_M->readings_bulk_update2_fn((Common_Definition_t*) ESP32_DeVICE_Definition
 			,strlen((const char *) ESP32_DeVICE_Set_ImplementedKeys[ESP32_DeVICE_Set_IK_WSAP_WiFi_Bandwidth].implementedKey)
 			,(const uint8_t *) ESP32_DeVICE_Set_ImplementedKeys[ESP32_DeVICE_Set_IK_WSAP_WiFi_Bandwidth].implementedKey
 			,parsedKVInput->keyData_t[ESP32_DeVICE_Set_IK_WSAP_WiFi_Bandwidth].len
@@ -4898,7 +4980,7 @@ WSAP_Password->valueString.length = parsedKVInput->keyData_t[ESP32_DeVICE_Set_IK
 	if (affectedReadings & ESP32_DeVICE_R_WiFi_Country) {
 
 		// create / update reading
-		SCDEFn_at_ESP32_DeVICE_M->readingsBulkUpdate2Fn((Common_Definition_t*) ESP32_DeVICE_Definition
+		SCDEFn_at_ESP32_DeVICE_M->readings_bulk_update2_fn((Common_Definition_t*) ESP32_DeVICE_Definition
 			,strlen((const char *) ESP32_DeVICE_Set_ImplementedKeys[ESP32_DeVICE_Set_IK_WiFi_Country].implementedKey)
 			,(const uint8_t *) ESP32_DeVICE_Set_ImplementedKeys[ESP32_DeVICE_Set_IK_WiFi_Country].implementedKey
 			,parsedKVInput->keyData_t[ESP32_DeVICE_Set_IK_WiFi_Country].len
@@ -4912,7 +4994,7 @@ WSAP_Password->valueString.length = parsedKVInput->keyData_t[ESP32_DeVICE_Set_IK
 	if (affectedReadings & ESP32_DeVICE_R_Station_IP_Adress) {
 
 		// create / update reading
-		SCDEFn_at_ESP32_DeVICE_M->readingsBulkUpdate2Fn((Common_Definition_t*) ESP32_DeVICE_Definition
+		SCDEFn_at_ESP32_DeVICE_M->readings_bulk_update2_fn((Common_Definition_t*) ESP32_DeVICE_Definition
 			,strlen((const char *) ESP32_DeVICE_Set_ImplementedKeys[ESP32_DeVICE_Set_IK_Station_IP_Adress].implementedKey)
 			,(const uint8_t *) ESP32_DeVICE_Set_ImplementedKeys[ESP32_DeVICE_Set_IK_Station_IP_Adress].implementedKey
 			,parsedKVInput->keyData_t[ESP32_DeVICE_Set_IK_Station_IP_Adress].len
@@ -4926,7 +5008,7 @@ WSAP_Password->valueString.length = parsedKVInput->keyData_t[ESP32_DeVICE_Set_IK
 	if (affectedReadings & ESP32_DeVICE_R_Station_Netmask) {
 
 		// create / update reading
-		SCDEFn_at_ESP32_DeVICE_M->readingsBulkUpdate2Fn((Common_Definition_t*) ESP32_DeVICE_Definition
+		SCDEFn_at_ESP32_DeVICE_M->readings_bulk_update2_fn((Common_Definition_t*) ESP32_DeVICE_Definition
 			,strlen((const char *) ESP32_DeVICE_Set_ImplementedKeys[ESP32_DeVICE_Set_IK_Station_Netmask].implementedKey)
 			,(const uint8_t *) ESP32_DeVICE_Set_ImplementedKeys[ESP32_DeVICE_Set_IK_Station_Netmask].implementedKey
 			,parsedKVInput->keyData_t[ESP32_DeVICE_Set_IK_Station_Netmask].len
@@ -4940,7 +5022,7 @@ WSAP_Password->valueString.length = parsedKVInput->keyData_t[ESP32_DeVICE_Set_IK
 	if (affectedReadings & ESP32_DeVICE_R_Station_Gateway_Adress) {
 
 		// create / update reading
-		SCDEFn_at_ESP32_DeVICE_M->readingsBulkUpdate2Fn((Common_Definition_t*) ESP32_DeVICE_Definition
+		SCDEFn_at_ESP32_DeVICE_M->readings_bulk_update2_fn((Common_Definition_t*) ESP32_DeVICE_Definition
 			,strlen((const char *) ESP32_DeVICE_Set_ImplementedKeys[ESP32_DeVICE_Set_IK_Station_Gateway_Adress].implementedKey)
 			,(const uint8_t *) ESP32_DeVICE_Set_ImplementedKeys[ESP32_DeVICE_Set_IK_Station_Gateway_Adress].implementedKey
 			,parsedKVInput->keyData_t[ESP32_DeVICE_Set_IK_Station_Gateway_Adress].len
@@ -4954,26 +5036,43 @@ WSAP_Password->valueString.length = parsedKVInput->keyData_t[ESP32_DeVICE_Set_IK
 	if (affectedReadings & ESP32_DeVICE_R_Station_MAC_Adress) {
 
 		// create / update reading
-		SCDEFn_at_ESP32_DeVICE_M->readingsBulkUpdate2Fn((Common_Definition_t*) ESP32_DeVICE_Definition
+		SCDEFn_at_ESP32_DeVICE_M->readings_bulk_update2_fn((Common_Definition_t*) ESP32_DeVICE_Definition
 			,strlen((const char *) ESP32_DeVICE_Set_ImplementedKeys[ESP32_DeVICE_Set_IK_Station_MAC_Adress].implementedKey)
 			,(const uint8_t *) ESP32_DeVICE_Set_ImplementedKeys[ESP32_DeVICE_Set_IK_Station_MAC_Adress].implementedKey
 			,parsedKVInput->keyData_t[ESP32_DeVICE_Set_IK_Station_MAC_Adress].len
 			,argsText + parsedKVInput->keyData_t[ESP32_DeVICE_Set_IK_Station_MAC_Adress].off
 			,true);
 	}
-
+*/
 // -------------------------------------------------------------------------------------------------
+
+  // temp, for reading creation
+  String_t reading_name;
+  String_t reading_value;
 
 	// Reading 'Station_Auto_Connect'
 	if (affectedReadings & ESP32_DeVICE_R_Station_Auto_Connect) {
 
+	    reading_name.len = strlen((const char *) ESP32_DeVICE_Set_ImplementedKeys[ESP32_DeVICE_Set_IK_Station_Auto_Connect].implementedKey);
+	    reading_name.p_char = (const uint8_t *) ESP32_DeVICE_Set_ImplementedKeys[ESP32_DeVICE_Set_IK_Station_Auto_Connect].implementedKey;
+	    reading_value.len = parsedKVInput->keyData_t[ESP32_DeVICE_Set_IK_Station_WiFi_Bandwidth].len;
+	    reading_value.p_char = argsText + parsedKVInput->keyData_t[ESP32_DeVICE_Set_IK_Station_WiFi_Bandwidth].off;
+		
+	    SCDEFn_at_ESP32_DeVICE_M->readings_bulk_update_fn((Common_Definition_t*) ESP32_DeVICE_Definition
+		    ,reading_name
+		    ,reading_value
+		    ,1,0);
+
+
+
+/*
 		// create / update reading
-		SCDEFn_at_ESP32_DeVICE_M->readingsBulkUpdate2Fn((Common_Definition_t*) ESP32_DeVICE_Definition
+		SCDEFn_at_ESP32_DeVICE_M->readings_bulk_update_fn((Common_Definition_t*) ESP32_DeVICE_Definition
 			,strlen((const char *) ESP32_DeVICE_Set_ImplementedKeys[ESP32_DeVICE_Set_IK_Station_Auto_Connect].implementedKey)
 			,(const uint8_t *) ESP32_DeVICE_Set_ImplementedKeys[ESP32_DeVICE_Set_IK_Station_Auto_Connect].implementedKey
 			,parsedKVInput->keyData_t[ESP32_DeVICE_Set_IK_Station_Auto_Connect].len
 			,argsText + parsedKVInput->keyData_t[ESP32_DeVICE_Set_IK_Station_Auto_Connect].off
-			,true);
+			,1,0);*/
 	}
 
 // -------------------------------------------------------------------------------------------------
@@ -4981,18 +5080,29 @@ WSAP_Password->valueString.length = parsedKVInput->keyData_t[ESP32_DeVICE_Set_IK
 	// add Reading 'Station_WiFi_Bandwidth'
 	if (affectedReadings & ESP32_DeVICE_R_Station_WiFi_Bandwidth) {
 
+	    reading_name.len = strlen((const char *) ESP32_DeVICE_Set_ImplementedKeys[ESP32_DeVICE_Set_IK_Station_WiFi_Bandwidth].implementedKey);
+	    reading_name.p_char = (const uint8_t *) ESP32_DeVICE_Set_ImplementedKeys[ESP32_DeVICE_Set_IK_Station_WiFi_Bandwidth].implementedKey;
+	    reading_value.len = parsedKVInput->keyData_t[ESP32_DeVICE_Set_IK_Station_WiFi_Bandwidth].len;
+	    reading_value.p_char = argsText + parsedKVInput->keyData_t[ESP32_DeVICE_Set_IK_Station_WiFi_Bandwidth].off;
+		
+	    SCDEFn_at_ESP32_DeVICE_M->readings_bulk_update_fn((Common_Definition_t*) ESP32_DeVICE_Definition
+		    ,reading_name
+		    ,reading_value
+		    ,1,0);
+
+/*
 		// create / update reading
-		SCDEFn_at_ESP32_DeVICE_M->readingsBulkUpdate2Fn((Common_Definition_t*) ESP32_DeVICE_Definition
+		SCDEFn_at_ESP32_DeVICE_M->readings_bulk_update_fn((Common_Definition_t*) ESP32_DeVICE_Definition
 			,strlen((const char *) ESP32_DeVICE_Set_ImplementedKeys[ESP32_DeVICE_Set_IK_Station_WiFi_Bandwidth].implementedKey)
 			,(const uint8_t *) ESP32_DeVICE_Set_ImplementedKeys[ESP32_DeVICE_Set_IK_Station_WiFi_Bandwidth].implementedKey
 			,parsedKVInput->keyData_t[ESP32_DeVICE_Set_IK_Station_WiFi_Bandwidth].len
 			,argsText + parsedKVInput->keyData_t[ESP32_DeVICE_Set_IK_Station_WiFi_Bandwidth].off
-			,true);
+			,1,0);*/
 	}
 //uint8_t *argsText
 // -------------------------------------------------------------------------------------------------
 
-  SCDEFn_at_ESP32_DeVICE_M->readingsEndUpdateFn((Common_Definition_t*) ESP32_DeVICE_Definition, true);
+  SCDEFn_at_ESP32_DeVICE_M->readings_end_update_fn((Common_Definition_t*) ESP32_DeVICE_Definition, true);
   }
 
 // =================================================================================================

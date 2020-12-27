@@ -69,39 +69,39 @@ typedef struct Entry_ESP32_DeVICE_Definition_s {
 
 
   // block #01
-  Reading2_t Name;
-  Reading2_t WSAP_Password;
-  Reading2_t WSAP_RF_Channel;
-  Reading2_t WSAP_Maximal_Connections;
-  Reading2_t WSAP_Authentication_Method;
-  Reading2_t WSAP_SSID;
-  Reading2_t WSAP_Beacon_Interval;
+  Reading_t Name;
+  Reading_t WSAP_Password;
+  Reading_t WSAP_RF_Channel;
+  Reading_t WSAP_Maximal_Connections;
+  Reading_t WSAP_Authentication_Method;
+  Reading_t WSAP_SSID;
+  Reading_t WSAP_Beacon_Interval;
 
   // block #02
-  Reading2_t WSAP_IP_Adress;
-  Reading2_t WSAP_Netmask;
-  Reading2_t WSAP_Gateway_Adress;
+  Reading_t WSAP_IP_Adress;
+  Reading_t WSAP_Netmask;
+  Reading_t WSAP_Gateway_Adress;
 
   // block #03
-  Reading2_t ap_mac_addr;
+  Reading_t ap_mac_addr;
 
   // block #04
-  Reading2_t ap_wifi_bandwidth;
+  Reading_t ap_wifi_bandwidth;
 
   // block #05
-  Reading2_t country;
+  Reading_t country;
 
   // block #06
-  Reading2_t sta_ip_info;
+  Reading_t sta_ip_info;
 
   // block #07
-  Reading2_t sta_mac_addr;
+  Reading_t sta_mac_addr;
 
   // block #08
-  Reading2_t sta_autoconnect_status;
+  Reading_t sta_autoconnect_status;
 
   // block #09
-  Reading2_t wifiBandwidthSTA;
+  Reading_t wifiBandwidthSTA;
 
 } Entry_ESP32_DeVICE_Definition_t;
 
@@ -114,6 +114,7 @@ typedef struct Entry_ESP32_DeVICE_Definition_s {
 // Attribute Fn - called in case of attribute changes for this definition, to check them
 Entry_String_t* ESP32_DeVICE_Attribute (Common_Definition_t* p_entry_definition, const String_t attr_command, const String_t attr_name, const String_t attr_value);
 
+//
 strTextMultiple_t* ESP32_DeVICE_Define(Common_Definition_t *Common_Definition);
 
 //
@@ -122,17 +123,29 @@ Entry_String_t* ESP32_DeVICE_GetV2(Entry_Definition_t* p_Entry_Definition, char 
 //
 strTextMultiple_t* ESP32_DeVICE_Get(Common_Definition_t* Common_Definition, uint8_t *getArgsText, size_t getArgsTextLen);
 
+//
 int ESP32_DeVICE_Initialize(SCDERoot_t* SCDERoot);
 
+//
+Entry_String_t * ESP32_DeVICE_Notify(Entry_Common_Definition_t *p_notifying_entry_common_definition, Entry_Common_Definition_t *p_own_entry_common_definition);
+
+//   
 strTextMultiple_t* ESP32_DeVICE_Rename(Common_Definition_t *Common_Definition, uint8_t *newName, size_t newNameLen, uint8_t *oldName, size_t oldNameLen);
 
+//
 strTextMultiple_t* ESP32_DeVICE_Set(Common_Definition_t* Common_Definition, uint8_t *setArgs, size_t setArgsLen);
 
+//
 strTextMultiple_t* ESP32_DeVICE_Shutdown(Common_Definition_t* Common_Definition);
 
+//
 Entry_String_t* ESP32_DeVICE_State(Common_Definition_t *Common_Definition, const time_t stateTiSt, const String_t stateNameString, const String_t stateValueString, const String_t stateMimeString);
 
+//
 strTextMultiple_t* ESP32_DeVICE_Undefine(Common_Definition_t* Common_Definition);
+
+
+
 
 static esp_err_t ESP32_DeVICE_WiFiEventHandler(void *ctx, system_event_t *event);
 
