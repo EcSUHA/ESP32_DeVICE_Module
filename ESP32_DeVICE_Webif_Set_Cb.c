@@ -15,19 +15,20 @@
 #include <SCDE_s.h>
 
 // provides WebIf, need the structures & types ...
+#include "WebIf_Module_s.h"
 #include "WebIf_Module.h"
 
 #include "ESP32_DeVICE_Module.h"
-#include "ESP32_SCDE_WEBIF_get_cb.h"
+#include "ESP32_DeVICE_Webif_Set_Cb.h"
 
-
+#include "ESP32_DeVICE_Set.h"
 
 /*
  *--------------------------------------------------------------------------------------------------
- *FName: ESP32_SCDE_WEBIF_get
- * Desc: For ESP32_SCDE - the WEBIF_get resource Remote Procedure (RP).
- *       Should be assinged to URI resources. Is used to process incoming get, ... requests
- *       to HTTP & HATP Server. POST ; Scheme HTTP ; Path opt. with UID ; Mime .get 
+ *FName: Webif_Set_Cb
+ * Desc: For ESP32_DEVICE - the WEBIF_set resource Remote Procedure (RP).
+ *       Should be assinged to URI resources. Is used to process incoming set, ... requests
+ *       to HTTP & HATP Server. POST ; Scheme HTTP ; Path opt. with UID ; Mime .set 
  *       Used Header-Fields:
  *       An Finite-State-Machine processes requests and responses with code and message.
  * Info: conn->getArgs -> Query String
@@ -37,26 +38,26 @@
  *--------------------------------------------------------------------------------------------------
  */
 
-// for: SCDE_get RPC, Finite State Machine processing State - Stage 2 (after parsing finished)
-enum SCDE_get_state
-  {					// #XX for debugging
-    S2S_get_Check_Stage1_Parser_State = 0// #00 check if parser of stage 1 is in a state that stage 2 can continue work
-  , S2S_get_Action_S1_Parse_Body_Data	// #01 detected that stage 1 has not parsed the complete message. Processing body data
-  , S2S_get_Action_S1_Msg_Prsd_Complete	// #02 detected that stage 1 has parsed the complete message including body data
-  , S2S_get_Check_RPC_Authorization	// #03 Check if request contains the required authorization
-  , S2S_get_Check_and_Get_ADID		// #04 Check and get the Active-Directory-ID
-  , S2S_get_Parse_Query_String		// #05 Parse the Query String
+// for: SCDE_set RPC, Finite State Machine processing State - Stage 2 (after parsing finished)
+	                                      // #XX for debugging	
+enum SCDE_set_state {			
+    S2S_set_Check_Stage1_Parser_State = 0 // #00 check if parser of stage 1 is in a state that stage 2 can continue work
+  , S2S_set_Action_S1_Parse_Body_Data	// #01 detected that stage 1 has not parsed the complete message. Processing body data
+  , S2S_set_Action_S1_Msg_Prsd_Complete	// #02 detected that stage 1 has parsed the complete message including body data
+  , S2S_set_Check_RPC_Authorization	    // #03 Check if request contains the required authorization
+  , S2S_set_Check_and_Get_ADID		    // #04 Check and get the Active-Directory-ID
+  , S2S_set_Parse_Query_String		    // #05 Parse the Query String
 
   // done - start writing response to TX buff.
   // No Error messages after this State !		 	   
-  , S2S_get_TX_Response_with_Code	// #06 add response to the TX (response) buffer. TX + Disconn if error code
-  , S2S_get_TX_Add_HDR_Flds		// #07 add header fields (if any) to the TX (response) buffer
-  , S2S_get_TX_Add_Body_Data		// #08 add body data (if any) to the TX (response) buffer
-  , S2S_get_DONE_TX_Response_Buff	// #09 done, incl. response, now TX response buffer and then disconnect
+  , S2S_set_TX_Response_with_Code	    // #06 add response to the TX (response) buffer. TX + Disconn if error code
+  , S2S_set_TX_Add_HDR_Flds		        // #07 add header fields (if any) to the TX (response) buffer
+  , S2S_set_TX_Add_Body_Data		    // #08 add body data (if any) to the TX (response) buffer
+  , S2S_set_DONE_TX_Response_Buff	    // #09 done, incl. response, now TX response buffer and then disconnect
   };
 
 int
-ESP32_SCDE_WEBIF_get(WebIf_HTTPDConnSlotData_t* conn)
+ESP32_DeVICE_Webif_Set_Cb(WebIf_HTTPDConnSlotData_t* conn)
 {
   // connection aborted? nothing to clean up.
   if ( conn->conn == NULL ) 
@@ -65,7 +66,7 @@ ESP32_SCDE_WEBIF_get(WebIf_HTTPDConnSlotData_t* conn)
 //---------------------------------------------------------------------------------------------------
 
   # if ESP32_SCDE_Module_DBG >= 4
-  printf("|SCDE_WEBIF_get>");
+  printf("|SCDE_WEBIF_set>");
   # endif
 
 /*
@@ -73,7 +74,7 @@ ESP32_SCDE_WEBIF_get(WebIf_HTTPDConnSlotData_t* conn)
   SCDEFn_at_ESP32_SCDE_M->Log3Fn(conn->p_entry_active_dir_matching_definition->name,
 	conn->p_entry_active_dir_matching_definition->nameLen,
 	5,
-	"SCDE_get Fn of Module '%.*s' is called.",
+	"SCDE_set Fn of Module '%.*s' is called.",
 	conn->p_entry_active_dir_matching_definition->module->provided->typeNameLen,
 	conn->p_entry_active_dir_matching_definition->module->provided->typeName);
   #endif
@@ -123,10 +124,10 @@ ESP32_SCDE_WEBIF_get(WebIf_HTTPDConnSlotData_t* conn)
 //  int S2_Statex;
 
   // enum state S2_State = (enum state) conn->S2_State;
-  enum SCDE_get_state S2_State = (enum SCDE_get_state) S2S_get_Check_Stage1_Parser_State;
+  enum SCDE_set_state S2_State = (enum SCDE_set_state) S2S_set_Check_Stage1_Parser_State;
 
   // set initial stage 2 processing state (= 0)
- // S2_Statex = S2S_get_Check_Stage1_Parser_State;
+ // S2_Statex = S2S_set_Check_Stage1_Parser_State;
 
   # if ESP32_SCDE_Module_DBG >= 4
   printf("|FST-Start>");
@@ -146,7 +147,7 @@ ESP32_SCDE_WEBIF_get(WebIf_HTTPDConnSlotData_t* conn)
 
 	// #00 check if parser of stage 1 is in a state that stage 2 can continue work
 
-	case S2S_get_Check_Stage1_Parser_State:
+	case S2S_set_Check_Stage1_Parser_State:
 
 	if (conn->SlotParserState != s_HTTPD_Msg_Prsd_Complete) {
 
@@ -162,14 +163,14 @@ ESP32_SCDE_WEBIF_get(WebIf_HTTPDConnSlotData_t* conn)
 	else {
 
 		// Message parsed complete - update state
-		S2_State = S2S_get_Action_S1_Msg_Prsd_Complete;
+		S2_State = S2S_set_Action_S1_Msg_Prsd_Complete;
 	}
 
 	break;
 
 //--------------------------------------------------------------------------------------------------
 
-	case S2S_get_Action_S1_Parse_Body_Data: // #01
+	case S2S_set_Action_S1_Parse_Body_Data: // #01
 
 	break;
 
@@ -177,10 +178,11 @@ ESP32_SCDE_WEBIF_get(WebIf_HTTPDConnSlotData_t* conn)
 
 	// #02 set Arguments according to method, check if arguments
 
-	case S2S_get_Action_S1_Msg_Prsd_Complete:
+	case S2S_set_Action_S1_Msg_Prsd_Complete:
 
-	// GET Method ?
-	if (conn->parser_method == HTTP_GET) {
+	// GET or SET Method ?
+	if ( (conn->parser_method == HTTP_GET) ||	// GET Method ?
+		(conn->parser_method == HTTP_SET) )	{	// SET Method ?
 
 		Args = conn->getArgs;
 
@@ -200,7 +202,7 @@ ESP32_SCDE_WEBIF_get(WebIf_HTTPDConnSlotData_t* conn)
 		conn->parser_http_errno = HPE_INVALID_URL;
 
 		// goto error;
-		S2_State = S2S_get_TX_Response_with_Code;
+		S2_State = S2S_set_TX_Response_with_Code;
 	}
 
 	// else go to next step
@@ -212,7 +214,7 @@ ESP32_SCDE_WEBIF_get(WebIf_HTTPDConnSlotData_t* conn)
   		#endif
 
 		// we have args - go to next step
-		S2_State = S2S_get_Check_RPC_Authorization;
+		S2_State = S2S_set_Check_RPC_Authorization;
 	}
 
 	break;
@@ -221,7 +223,7 @@ ESP32_SCDE_WEBIF_get(WebIf_HTTPDConnSlotData_t* conn)
 
 	// #03 Check for valid authorization (AUTH_GENERIC_RESSOURCE)
 
-	case S2S_get_Check_RPC_Authorization:
+	case S2S_set_Check_RPC_Authorization:
 
 /* skip auth temp..
 	if (SCDED_AuthCheck(conn, AUTH_GENERIC_RESSOURCE)) {
@@ -230,23 +232,23 @@ ESP32_SCDE_WEBIF_get(WebIf_HTTPDConnSlotData_t* conn)
 		conn->parser_http_errno = HPE_NO_AUTH;
 
 		// goto error;
-		S2_State = S2S_get_TX_Response_with_Code;
+		S2_State = S2S_set_TX_Response_with_Code;
 
 	}
 
 	else {
 
 		// authorized - go to next step
-		S2_State = S2S_get_Parse_Query_String; // SCHRITT übersprungen !!!S2S_get_Check_and_Get_ADID;
+		S2_State = S2S_set_Parse_Query_String; // SCHRITT übersprungen !!!S2S_set_Check_and_Get_ADID;
 	}
-*/S2_State = S2S_get_Parse_Query_String;
+*/S2_State = S2S_set_Parse_Query_String;
 	break;
 
 //--------------------------------------------------------------------------------------------------
 /*
 	// #04 Check & Get Active Directory ID (ADID)
 
-	case S2S_get_Check_and_Get_ADID:
+	case S2S_set_Check_and_Get_ADID:
 //ist immer valid!!!
 	// Get index value from conn->ActiveDirID
 	ADID  = conn->ActiveDirID -1;
@@ -259,7 +261,7 @@ ESP32_SCDE_WEBIF_get(WebIf_HTTPDConnSlotData_t* conn)
 		// Active Directory ID (ADID) out of range error- finnish with error
 		conn->parser_http_errno = HPE_ADID_AOR;
 		//goto error;
-		S2_State = S2S_get_TX_Response_with_Code;
+		S2_State = S2S_set_TX_Response_with_Code;
 
 		}
 
@@ -271,7 +273,7 @@ ESP32_SCDE_WEBIF_get(WebIf_HTTPDConnSlotData_t* conn)
   		#endif
 
 		// Got valid ADID - go to next step
-		S2_State = S2S_get_Parse_Query_String;
+		S2_State = S2S_set_Parse_Query_String;
 	}
 
 	break;
@@ -280,26 +282,26 @@ ESP32_SCDE_WEBIF_get(WebIf_HTTPDConnSlotData_t* conn)
 
 	// #05 Parse the Query String
 
-	case S2S_get_Parse_Query_String:
+	case S2S_set_Parse_Query_String:
 	{
 
-        char **argv;
+        char **p_p_argv;
         int argc;
 
         // split the query to args
-        argv = SCDEFn_at_ESP32_DeVICE_M->ArgParse_SplitURLEncodedArgsToAllocatedMemFn(&argc, Args);
+        p_p_argv = SCDEFn_at_ESP32_DeVICE_M->ArgParse_SplitURLEncodedArgsToAllocatedMemFn(&argc, Args);
 
-        respMsg = ESP32_DeVICE_GetV2(conn->p_entry_active_dir_matching_definition
-              ,argv, argc);
+        respMsg = ESP32_DeVICE_Set(conn->p_entry_active_dir_matching_definition
+              ,p_p_argv, argc);
 
         // ArgParse Split_ToArgsFn has allocated mem. Free it.
-        SCDEFn_at_ESP32_DeVICE_M->ArgParse_FreeSplittedArgsInAllocatedMemFn(argv);
+        SCDEFn_at_ESP32_DeVICE_M->ArgParse_FreeSplittedArgsInAllocatedMemFn(p_p_argv);
 
 	// assuming processed OK
 	conn->parser_http_errno = 0;
 
 	// parsed query string  - go to next step
-	S2_State = S2S_get_TX_Response_with_Code;
+	S2_State = S2S_set_TX_Response_with_Code;
 
 	}
 
@@ -309,7 +311,7 @@ ESP32_SCDE_WEBIF_get(WebIf_HTTPDConnSlotData_t* conn)
 
 	// #06 add response to the TX (response) buffer. TX + Disconn if error code
 
-	case S2S_get_TX_Response_with_Code:
+	case S2S_set_TX_Response_with_Code:
 
 	// start resonse header with code and desc.
 	SCDED_StartRespHeader2(conn);
@@ -322,7 +324,7 @@ ESP32_SCDE_WEBIF_get(WebIf_HTTPDConnSlotData_t* conn)
 	}
 
 	// response added to TX buf, code OK - go to next step
-	S2_State = S2S_get_TX_Add_HDR_Flds;
+	S2_State = S2S_set_TX_Add_HDR_Flds;
 
 	break;
 
@@ -330,7 +332,7 @@ ESP32_SCDE_WEBIF_get(WebIf_HTTPDConnSlotData_t* conn)
 
 	// #07 add header fields (if any) to the TX (response) buffer
 
-	case S2S_get_TX_Add_HDR_Flds:
+	case S2S_set_TX_Add_HDR_Flds:
 
 	// add 'CONTENT-LENGHT' Hdr-Fld, if we will send data
 	if (respMsg && respMsg->string.len) {
@@ -353,7 +355,7 @@ ESP32_SCDE_WEBIF_get(WebIf_HTTPDConnSlotData_t* conn)
 	SCDED_EndHeader(conn);
 
 	// header fields added - go to next step
-	S2_State = S2S_get_TX_Add_Body_Data;
+	S2_State = S2S_set_TX_Add_Body_Data;
 
 	break;
 
@@ -361,7 +363,7 @@ ESP32_SCDE_WEBIF_get(WebIf_HTTPDConnSlotData_t* conn)
 
 	// #08 add body data (if any) to the TX (response) buffer
 
-	case S2S_get_TX_Add_Body_Data:
+	case S2S_set_TX_Add_Body_Data:
 
 	if (respMsg) {
 
@@ -374,14 +376,14 @@ ESP32_SCDE_WEBIF_get(WebIf_HTTPDConnSlotData_t* conn)
 	}
 
 	// body data added - go to next step
-	S2_State = S2S_get_DONE_TX_Response_Buff;
+	S2_State = S2S_set_DONE_TX_Response_Buff;
 
 	break;
 
 //--------------------------------------------------------------------------------------------------
 
 	// #09 done, incl. response, now TX response buffer and then disconnect
-	case S2S_get_DONE_TX_Response_Buff:
+	case S2S_set_DONE_TX_Response_Buff:
 
 	# if ESP32_SCDE_Module_DBG >= 4
 	printf("|Done!>");
@@ -399,7 +401,7 @@ ESP32_SCDE_WEBIF_get(WebIf_HTTPDConnSlotData_t* conn)
 	conn->parser_http_errno = HPE_UNHANDLED_STATE;
 
 	// error number set - go to next step (TX response with code and disconnect)
-	S2_State = S2S_get_TX_Response_with_Code;
+	S2_State = S2S_set_TX_Response_with_Code;
 
 	break;
 

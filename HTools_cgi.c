@@ -8,7 +8,6 @@
 //##################################################################################################
 #include "ProjectConfig.h"
 #include <esp8266.h>
-#include "WebIf_Module.h"
 #include "Platform.h"
 
 
@@ -30,6 +29,12 @@
 //#include "espmissingincludes.h"
 //#include "SCDE.h"
 //#include "CloudUpdate.h"
+
+
+#include <SCDE_s.h>
+
+#include "WebIf_Module_s.h"
+#include "WebIf_Module.h"
 
 #include "HTools_cgi.h"
 #include "CGI_NoAuthErr.h"

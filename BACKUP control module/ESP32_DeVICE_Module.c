@@ -37,7 +37,6 @@ define xyz
 
 // attr myname + Attribute mit Werten
 
-//##################################################################################################
 #include <ProjectConfig.h>
 #include <esp8266.h>
 #include <Platform.h>
@@ -48,49 +47,51 @@ define xyz
 #include <SCDE_s.h>
 
 // provides WebIf, need the structures & types ...
-#include "WebIf_Module_s.h"
 #include "WebIf_Module.h"
 
-/*
- * this Modules structures & types ...
- */
+// this Modules structures & types ...
 #include "ESP32_DeVICE_Module.h"
-#include "ESP32_DeVICE_readings.h"
-
-/*
- *      the core module fn
- */ 
-#include "ESP32_DeVICE_Attribute.h"
-#include "ESP32_DeVICE_Define.h"
-//#include "ESP32_DeVICE_Delete.c"
-//#include ""ESP32_DeVICE_DirectRead.c"
-//#include ""ESP32_DeVICE_DirectWrite.c"
-//#include ""ESP32_DeVICE_Except.c"
-#include "ESP32_DeVICE_Get.h"
-//#include ""ESP32_DeVICE_Idle.c"
-#include "ESP32_DeVICE_Initialize.h"
-#include "ESP32_DeVICE_Notify.h"
-//#include ""ESP32_DeVICE_Parse.c"		
-//#include ""ESP32_DeVICE_Read.c"	
-//#include ""ESP32_DeVICE_Ready.c"	
-#include "ESP32_DeVICE_Rename.h"
-#include "ESP32_DeVICE_Set.h"
-#include "ESP32_DeVICE_Shutdown.h"
-#include "ESP32_DeVICE_State.h"
-#include "ESP32_DeVICE_Undefine.h"
-//#include "ESP32_DeVICE_Write.h"
-
-/*
- *      the old webif v1.5
- */
-#include "ESP32_DeVICE_Webif_Get_Cb.h"
-#include "ESP32_DeVICE_Webif_Jso_Cb.h"
-#include "ESP32_DeVICE_Webif_Set_Cb.h"
+#include "ESP32_SCDE_WEBIF_get_cb.h"
 
 
 
 
-// unsorted 
+
+
+#include "freertos/event_groups.h"
+
+
+
+// -------------------------------------------------------------------------------------------------
+
+// set default build verbose - if no external override
+#ifndef ESP32_DeVICE_Module_DBG  
+#define ESP32_DeVICE_Module_DBG  5	// 5 is default
+#endif 
+
+// -------------------------------------------------------------------------------------------------
+
+// set default build verbose - if no external override
+#ifndef ESP32_SCDE_Module_DBG  
+#define ESP32_SCDE_Module_DBG  5	// 5 is default
+#endif 
+
+// -------------------------------------------------------------------------------------------------
+
+
+
+
+// FreeRTOS event group to signal when we are connected & ready to make a request
+static EventGroupHandle_t wifi_event_group;
+
+/* The event group allows multiple bits for each event,
+ but we only care about one event - are we connected
+ to the AP with an IP? */
+static const int CONNECTED_BIT = BIT0;
+
+// -------------------------------------------------------------------------------------------------
+
+
 
 #include <WebIf_EspFSStdFileTX.h>
 #include <WebIf_EspFSAdvFileTX.h>
@@ -100,251 +101,10 @@ define xyz
 #include <CGI_Redirect.h>
 
 
-#include "freertos/event_groups.h"
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-/**
- * -------------------------------------------------------------------------------------------------
- *  DName: _ProvidedByModule (new:_provided_by_module)
- *  Desc: Data 'Provided By Module' for the core module (functions + infos this module provides
- *        to SCDE)
- *  Data: 
- * -------------------------------------------------------------------------------------------------
- */
-ProvidedByModule_t ESP32_DeVICE_ProvidedByModule = { 	// A-Z order
-  "scde"					        // Type-Name of module -> on Linux libfilename.so !
-  ,4								// size of Type-Name
-
-  ,&ESP32_DeVICE_reading_types      // embedded reading types
-  
-  ,NULL								// Add
-  ,ESP32_DeVICE_Attribute			// Attribute
-  ,ESP32_DeVICE_Define				// Define
-  ,NULL								// Delete
-  ,NULL								// DirectRead
-  ,NULL								// DirectWrite
-  ,NULL								// Except
-  ,ESP32_DeVICE_Get					// Get
-  ,NULL								// IdleCb
-  ,ESP32_DeVICE_Initialize			// Initialize
-  ,ESP32_DeVICE_Notify				// Notify
-  ,NULL								// Parse
-  ,NULL								// Read
-  ,NULL								// Ready
-  ,ESP32_DeVICE_Rename				// Rename
-  ,ESP32_DeVICE_Set					// Set
-  ,ESP32_DeVICE_Shutdown			// Shutdown
-  ,ESP32_DeVICE_State				// State
-  ,NULL								// Sub
-  ,ESP32_DeVICE_Undefine			// Undefine
-  ,NULL								// Write
-  ,NULL								// FnProvided
-  ,sizeof(Entry_ESP32_DeVICE_Definition_t)	// Modul specific Size (Common_Definition_t + X)
-};
-
-
-
-/**
- * -------------------------------------------------------------------------------------------------
- *  DName: _ActiveResourcesDataA (Neu: _webif_active_directory_content_a)
- *  Desc: Resource-Content-structure of active Directory - PART A (Resource-Data-Row)
- *  Data: WebIf_ActiveResourcesDataA_t[X] from HttpD.h
- * -------------------------------------------------------------------------------------------------
- */
-// Content:   AllowedMethodBF          | AllowedDocMimeBF  | AllowedSchemeBF |free|CgiNo| EnaByBit | Url
-const WebIf_ActiveResourcesDataA_t ESP32_DeVICE_ActiveResourcesDataA_forWebIf[] = {
-
-// Multi SCDE(es)-Feature Control
-  // GET http://192.168.0.24:80/SCDE .htm oder .jso
-  // POST http://192.168.0.24:80/SCDE .htm oder .jso
-  { 0b00000000000000000000000000001010, 0b0000000000001010, 0b0000000000000001,     0,    3, 0b00000000, "/SCDE"},
-
-  // SCDE-Feature Control (http + http compatibility resources incl. method compatibility mode) - adressing by seq. no. of definition (from this TYPE)
-  // GET http://192.168.0.24:80/3 .htm, .cgi, .jso, .set oder .get
-  // POST http://192.168.0.24:80/3 .htm, .cgi, .jso, .set oder .get
-  { 0b00000000000000000000000000001010, 0b0000000001011110, 0b0000000000000001,     0,    1, 0b00000000, "/\xf1/SCDE\x00 /SCDEX.htm"},
-
-  // SCDE-Feature Control (http + http compatibility resources incl. method compatibility mode) - adressing by NAME
-  // GET http://192.168.0.24:80/SSR.1.at.GPIO.13 .htm, .cgi, .jso, .set oder .get
-  // POST http://192.168.0.24:80/SSR.1.at.GPIO.13 .htm, .cgi, .jso, .set oder .get
-  { 0b00000000000000000000000000001010, 0b0000000001011110, 0b0000000000000001,     0,    1, 0b00000000, "/\xf3\x00 /SCDEX.htm"},
-
-// SCDE-Feature Control (Home Automation scheme SCDE incl. method compatibility mode) - adressing by seq. no. of definition (from this TYPE)
-  // GET scde://192.168.0.24:80/3                     SCDE-Feature-No.     Control - Home Automation Scheme SCDE:// access Resources
-  { 0b00000000000000000000000000000010, 0b0000000000000001, 0b0000000000000010,     0,    1, 0b00000000, "/\xf1\x00\x08"},
-  // SET scde://192.168.0.24:80/3                     SCDE-Feature-No.     Control - Home Automation Scheme SCDE:// access Resources
-  { 0b00000000000000000000000000000100, 0b0000000000000001, 0b0000000000000010,     0,    2, 0b00000000, "/\xf1\x00\x08"},
-    // kompatibilität - nötig ?
-    // GET scde://192.168.0.24:80/3.get                 SCDE-Feature-No.     Control - Home Automation Scheme SCDE:// access Resources
-    { 0b00000000000000000000000000000010, 0b0000000001000000, 0b0000000000000010,   0,    1, 0b00000000, "/\xf1\x00\x08"},
-    // GET scde://192.168.0.24:80/3.set                 SCDE-Feature-No.     Control - Home Automation Scheme SCDE:// access Resources
-    { 0b00000000000000000000000000000010, 0b0000000000010000, 0b0000000000000010,   0,    1, 0b00000000, "/\xf1\x00\x08"},
-
-//SCDE-Feature Control (Home Automation scheme SCDE incl. method compatibility mode) - adressing by NAME
-  // GET scde://192.168.0.24:80/SSR.1.at.GPIO.13      RENAMED SCDE-Feature Control - Home Automation SCDE:// access Resources
-  { 0b00000000000000000000000000000010, 0b0000000000000001, 0b0000000000000010,     0,    1, 0b00000000, "/\xf3\x00\x08"},
-  // SET scde://192.168.0.24:80/SSR.1.at.GPIO.13      RENAMED SCDE-Feature Control - Home Automation SCDE:// access Resources
-  { 0b00000000000000000000000000000100, 0b0000000000000001, 0b0000000000000010,     0,    2, 0b00000000, "/\xf3\x00\x08"},
-    // kompatibilität - nötig ?
-    // GET scde://192.168.0.24:80/SSR.1.at.GPIO.13.get  RENAMED SCDE-Feature Control - Home Automation SCDE:// access Resources
-    { 0b00000000000000000000000000000010, 0b0000000001000000, 0b0000000000000010,   0,    1, 0b00000000, "/\xf3\x00\x08"},
-    // GET scde://192.168.0.24:80/SSR.1.at.GPIO.13.set  RENAMED SCDE-Feature Control - Home Automation SCDE:// access Resources
-    { 0b00000000000000000000000000000010, 0b0000000000010000, 0b0000000000000010,   0,    1, 0b00000000, "/\xf3\x00\x08"},
-
-
-// old stuff
-
-  // SOC Hardware Cfg
-  { 0b00000000000000000000000000001010, 0b0000000000001110, 0b0000000000000001,  0,  4, 0b00000000, "/SoCHWCfg"}
-
-  // WiFi Stations Cfg
- ,{ 0b00000000000000000000000000001010, 0b0000000000001110, 0b0000000000000001,  0,  5, 0b00000000, "/WiFi/StationCfg"}
-
-  // WIFI Q-Connect PAGES
- ,{ 0b00000000000000000000000000001010, 0b0000000000000010, 0b0000000000000001,  0,  6, 0b00000000, "/WiFi/QConnect"}
- ,{ 0b00000000000000000000000000001010, 0b0000000000001000, 0b0000000000000001,  0,  7, 0b00000000, "/WiFi/WiFiScan"}
- ,{ 0b00000000000000000000000000001010, 0b0000000000000100, 0b0000000000000001,  0,  8, 0b00000000, "/WiFi/Connect"}
- ,{ 0b00000000000000000000000000001010, 0b0000000000000100, 0b0000000000000001,  0,  9, 0b00000000, "/WiFi/Setmode"}
-
-  // Service Access Point Cfg
- ,{ 0b00000000000000000000000000001010, 0b0000000000001110, 0b0000000000000001,  0, 10, 0b00000000, "/WiFi/ServAPCfg"}
-
-  // TimeStamp Cfg
- ,{ 0b00000000000000000000000000001010, 0b0000000000001110, 0b0000000000000001,  0, 11, 0b00000000, "/TiStCfg"}
-
-  // Firmware Update
- ,{ 0b00000000000000000000000000001010, 0b0000000000001110, 0b0000000000000001,  0, 12, 0b00000000, "/Firmware"}
-
-  // Redirects
- ,{ 0b00000000000000000000000000001010, 0b0000000000000001, 0b0000000000000001,  0, 13, 0b00000000, "/WiFi"}	// nomime
- ,{ 0b00000000000000000000000000001010, 0b0000000000000001, 0b0000000000000001,  0, 13, 0b00000000, "/WiFi/"}	// nomime
- ,{ 0b00000000000000000000000000001010, 0b0000000000000001, 0b0000000000000001,  0, 14, 0b00000000, "/"}	// nomime
- ,{ 0b00000000000000000000000000001010, 0b0000000000000010, 0b0000000000000001,  0, 14, 0b00000000, "/index"}	// .htm
-
-  // Secret services
- ,{ 0b00000000000000000000000000001010, 0b0000000000100000, 0b0000000000000001,  0, 15, 0b00000000, "/32MBitFlash"}
- ,{ 0b00000000000000000000000000001010, 0b0000000000100000, 0b0000000000000001,  0, 16, 0b00000000, "/wfs"}
-
- ,{0,0,0,0,0,0,"*"}
-};
-
-
-
-/**
- * -------------------------------------------------------------------------------------------------
- *  DName: _ActiveResourcesDataB_forWebIf (Neu: _webif_active_directory_content_a)
- *  Desc: Resource-Content-structure of active Directory - PART B (Procedure-Call-Data-Row) 
- *  Data: WebIf_ActiveResourcesDataB_t[X] from HttpD.h
- * -------------------------------------------------------------------------------------------------
- */
-const WebIf_ActiveResourcesDataB_t ESP32_DeVICE_ActiveResourcesDataB_forWebIf[] =  {
-// CgiFucID=(No.<<16)+AllowedSchemeBF |      cgi            |     cgi_data
-
-  // SCDE-Definition-Feature Control
-//{(1<<16) +	0b0000000000000010,    WebIf_EspFSAdvFileTX,        ESP32_SCDEtpl },
-//{(1<<16) +	0b0000000000000100,    ESP32_SCDE_cgi,    	        NULL },
-  {(1<<16) +	0b0000000000001001,    ESP32_DeVICE_Webif_Jso_Cb,   NULL }, // ohne, .jso,
-  {(1<<16) +	0b0000000001000000,    ESP32_DeVICE_Webif_Get_Cb,	NULL }, // experimental .get
-  {(1<<16) +	0b0000000000010000,    ESP32_DeVICE_Webif_Set_Cb,   NULL },
-  {(2<<16) +	0b0000000000010001,    ESP32_DeVICE_Webif_Set_Cb,   NULL }, // Ergänzung für .set ,2 ohne mime
-
-  // SCDE-Module-Feature Control (All SCDE(es)-Feature Control)
-//{(3<<16) +	0b0000000000000010,    WebIf_EspFSAdvFileTX,        ESP32_SCDE_tpl },
-//{(3<<16) +	0b0000000000001000,    ESP32_SCDE_jso,              NULL }
-
-
-// old stuff
-
-  // ### SOC Hardware Cfg ###
-  {( 4<<16) +	0b0000000000000010,	NULL,NULL}//	EspFsTemplate_cgi,	SoCHWCfg_tpl	}
- ,{( 4<<16) +	0b0000000000000100,	NULL,NULL}//	SoCHWCfg_cgi,		NULL		}
- ,{( 4<<16) +	0b0000000000001000,	NULL,NULL}//	SoCHWCfg_jso,		NULL		}
-
-  // ### WiFi Station Cfg ###
- ,{( 5<<16) +	0b0000000000000010,	NULL,NULL}//	EspFsTemplate_cgi,	StationCfg_tpl	}
- ,{( 5<<16) +	0b0000000000000100,	NULL,NULL}//	StationCfg_cgi,		NULL		}
- ,{( 5<<16) +	0b0000000000001000,	NULL,NULL}//	StationCfg_jso,		NULL		}
-
-  // ### WIFI Q-Connect PAGES ###
- ,{( 6<<16) +	0b0000000000000010,	NULL,NULL}//	EspFsTemplate_cgi,	WifiQConnect_tpl}
- ,{( 7<<16) +	0b0000000000001000,	NULL,NULL}//	WiFiScan_jso,		NULL		}
- ,{( 8<<16) +	0b0000000000000100,	NULL,NULL}//	WiFiConnect_cgi,	NULL		}
- ,{( 9<<16) +	0b0000000000000100,	NULL,NULL}//	WifiSetMode_cgi,	NULL		}	
-
-  // ### Service Access Point Cfg ###
- ,{(10<<16) +	0b0000000000000010,	WebIf_EspFSAdvFileTX,	ServAPCfg_tpl	}
- ,{(10<<16) +	0b0000000000000100,	NULL,NULL}//	ServAPCfg_cgi,		NULL		}
- ,{(10<<16) +	0b0000000000001000,	NULL,NULL}//	ServAPCfg_jso,		NULL		}
-
-  // ### TimeStamp Cfg ###
- ,{(11<<16) +	0b0000000000000010,	NULL,NULL}//	EspFsTemplate_cgi,	TiStCfg_tpl	}
- ,{(11<<16) +	0b0000000000000100,	NULL,NULL}//	TiStCfg_cgi,		NULL		}
- ,{(11<<16) +	0b0000000000001000,	NULL,NULL}//	TiStCfg_jso,		NULL		}
-
-  // ### Firmware Update ###
- ,{(12<<16) +	0b0000000000000010,	NULL,NULL}//	EspFsTemplate_cgi,	FirmwareUd_tpl	}
- ,{(12<<16) +	0b0000000000000100,	NULL,NULL}//	FirmwareUd_cgi,		NULL		}
- ,{(12<<16) +	0b0000000000001000,	NULL,NULL}//	FirmwareUd_jso,		NULL		}
-
-  // ### Redirects ###
- ,{(13<<16) +	0b0000000000000001,	cgiRedirect,	"/WiFi/QConnect.htm"		}
- ,{(14<<16) +	0b0000000000000001,	cgiRedirect,	"/CoNTROL_8S-1C-1ADC.htm"	}
- ,{(14<<16) +	0b0000000000000010,	cgiRedirect,	"/CoNTROL_8S-1C-1ADC.htm"	}
-
-  // ### Secret services ###
- ,{(15<<16) +	0b0000000000100000,	ReadFullFlash_cgi,	NULL		}		//.bin
- ,{(16<<16) +	0b0000000000100000,	NULL,NULL}//	WriteFileSystem_cgi,	NULL		}		//.bin
-};
 
 
 
 // -------------------------------------------------------------------------------------------------
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -446,6 +206,203 @@ SelectAData ESP32_DeVICE_WIFI_BANDWIDTH[] = {  //ID, Text MAX CGI LEN BEACHTEN!!
 
 
 //define xyz ESP32_DeVICE Name=maik&WSAP_Password=pw&WSAP_RF_Channel=1&WSAP_Maximal_Connections=3&WSAP_Authentication_Method=WPA2_PSK
+
+
+/**
+ * For Type: ESP32_DeVICE
+ * Implemented-Keys (Args input via Key=value) for SetFn input (MAX 64!)
+ * KEYs-Field-Set for Feature specific query. Will be generated by SCDEH_ParseStrToparsedKVInput()
+ * parsed result is stored in ESP32_DeVICE_parsedKVInput_t
+ */
+enum ESP32_DeVICE_Set_IK {				// Bit #XX for debugging
+
+  // Block 1 - func
+    ESP32_DeVICE_Set_IK_Name		= 0				// Bit #00 'Name'						-> 
+  , ESP32_DeVICE_Set_IK_WSAP_Password				// Bit #01 'WSAP_Password'				-> 
+  , ESP32_DeVICE_Set_IK_WSAP_RF_Channel		        // Bit #02 'WSAP_RF_Channel' 			-> 
+  , ESP32_DeVICE_Set_IK_WSAP_Maximal_Connections	// Bit #03 'WSAP_Maximal_Connections'  	-> 
+  , ESP32_DeVICE_Set_IK_WSAP_Authentication_Method	// Bit #04 'WSAP_Authentication_Method' -> 
+  , ESP32_DeVICE_Set_IK_WSAP_SSID_Visibility		// Bit #05 'WSAP_SSID'  				-> 
+  , ESP32_DeVICE_Set_IK_WSAP_Beacon_Interval		// Bit #06 'WSAP_Beacon_Interval'  		-> 
+
+   // Block 2 - func
+  , ESP32_DeVICE_Set_IK_WSAP_IP_Adress				// Bit #07 'WSAP_IP_Adress'  		-> 
+  , ESP32_DeVICE_Set_IK_WSAP_Netmask				// Bit #08 'WSAP_Netmask'  		-> 
+  , ESP32_DeVICE_Set_IK_WSAP_Gateway_Adress			// Bit #09 'WSAP_Gateway_Adress'  	-> 
+
+   // Block 3 - func
+  , ESP32_DeVICE_Set_IK_WSAP_MAC_Adress		        // Bit #10 'WSAP_MAC_Adress'  		-> 
+
+   // Block 4 - func
+  , ESP32_DeVICE_Set_IK_WSAP_WiFi_Bandwidth			// Bit #11 'WSAP_WiFi_Bandwidth'	-> 
+
+   // Block 5 - func
+  , ESP32_DeVICE_Set_IK_WiFi_Country				// Bit #12 'WiFi_Country'		-> 
+
+   // Block 6 - func
+  , ESP32_DeVICE_Set_IK_Station_IP_Adress			// Bit #13 'Station_IP_Adress'  	-> 
+  , ESP32_DeVICE_Set_IK_Station_Netmask		        // Bit #14 'Station_Netmask'  		-> 
+  , ESP32_DeVICE_Set_IK_Station_Gateway_Adress		// Bit #15 'Station_Gateway_Adress'  	-> 
+
+   // Block 7 - func
+  , ESP32_DeVICE_Set_IK_Station_MAC_Adress			// Bit #16 'Station_MAC_Adress'		-> 
+
+   // Block 8 - func
+  , ESP32_DeVICE_Set_IK_Station_Auto_Connect		// Bit #17 'Station_Auto_Connect'	-> 
+
+   // Block 9 - func
+  , ESP32_DeVICE_Set_IK_Station_WiFi_Bandwidth		// Bit #18 'Station_WiFi_Bandwidth'	-> 
+
+
+
+
+
+
+   // Block 3 - func
+  , ESP32_DeVICE_Set_IK_WSAP_DHCPS_Lease_Start_IP	// Bit #10 'WSAP_DHCPS_Lease_Start_IP'  -> 
+  , ESP32_DeVICE_Set_IK_WSAP_DHCPS_Lease_End_IP	    // Bit #11 'WSAP_DHCPS_Lease_End_IP'  	-> 
+
+   // Block 4 - func
+  , ESP32_DeVICE_Set_IK_WSAP_DHCPS					// Bit #12 'WSAP_DHCPS'  		-> 
+
+
+   // Block 6 - func
+  , ESP32_DeVICE_Set_IK_WSAP						// Bit #14 'WSAP'  			-> 
+
+
+   // Block 8 - func
+  , ESP32_DeVICE_Set_IK_Station			       		// Bit #18 'Station'  			-> 
+
+   // Block 9 - func
+  , ESP32_DeVICE_Set_IK_Station_DHCP				// Bit #19 'Station_DHCP'		-> 
+
+
+   // Block 11 - func
+  , ESP32_DeVICE_Set_IK_Station_Physical_Mode		// Bit #21 'Station_Physical_Mode'	-> 
+
+   // Block 12 - func
+  , ESP32_DeVICE_Set_IK_Station_Get_RSSI			// Bit #22 'Station_Get_RSSI'		-> 
+
+
+
+
+   // Block 14 - func
+  , ESP32_DeVICE_Set_IK_TiSt_NTP_Server_Main		// Bit #24 'TiSt_NTP_Server_Main'	-> 
+
+   // Block 15 - func
+  , ESP32_DeVICE_Set_IK_TiSt_NTP_Server_Backup_1	// Bit #25 'TiSt_NTP_Server_Backup_1'	-> 
+
+   // Block 16 - func
+  , ESP32_DeVICE_Set_IK_TiSt_NTP_Server_Backup_2	// Bit #26 'TiSt_NTP_Server_Backup_2'	-> 
+
+   // Block 17 - func
+  , ESP32_DeVICE_Set_IK_TiSt_Time_Zone				// Bit #27 'TiSt_Time_Zone'		-> 
+
+   // Block 18 - func
+  , ESP32_DeVICE_Set_IK_TiSt_Get_Time				// Bit #28 'TiSt_Get_Time'		-> 
+
+   // Block xx - func
+  , ESP32_DeVICE_Set_IK_SoCHW_Restart				// Bit #29 'SoCHW_Restart'		-> 
+
+   // Block xx - func
+  , ESP32_DeVICE_Set_IK_SoCHW_Factory_Reset_SCDE	// Bit #30 'SoCHW_Factory_Reset_SCDE'	-> 
+
+   // Block xx - func
+  , ESP32_DeVICE_Set_IK_SoCHW_Factory_Reset_CAPI	// Bit #31 'SoCHW_Factory_Reset_CAPI'	-> 
+
+   // Block xx - func
+  , ESP32_DeVICE_Set_IK_SoCHW_Factory_Reset			// Bit #32 'SoCHW_Factory_Reset'	-> 
+
+   // helper to get number of implemented keys
+  , ESP32_DeVICE_Set_NUMBER_OF_IK					// Bit #34 MAX 64 IMPLEMENTED !
+};
+
+
+
+/* For Type: ESP32_DeVICE
+ * Implemented readings (MAX 32!)
+ * Can be assigned to Implemented Keys, if affected
+ */
+enum ESP32_DeVICE_Readings {				 // Bit #XX for debugging
+  // Internals - TiSt-Sharing - Block 1 - func
+   ESP32_DeVICE_R_Name							= (1<<0) // Bit #01 'Name'			-> 
+  ,ESP32_DeVICE_R_WSAP_Password					= (1<<1) // Bit #01 'WSAP_Password'		-> 
+  ,ESP32_DeVICE_R_WSAP_RF_Channel				= (1<<2) // Bit #01 'WSAP_RF_Channel'		-> 
+  ,ESP32_DeVICE_R_WSAP_Maximal_Connections		= (1<<3) // Bit #01 'WSAP_Maximal_Connections'	-> 
+  ,ESP32_DeVICE_R_WSAP_Authentication_Method	= (1<<4) // Bit #01 'WSAP_Authentication_Method'-> 
+  ,ESP32_DeVICE_R_WSAP_SSID_Visibility						= (1<<5) // Bit #01 'WSAP_SSID'			->
+  ,ESP32_DeVICE_R_WSAP_Beacon_Interval			= (1<<6) // Bit #01 'WSAP_Beacon_Interval'	-> 
+
+  // Internals - TiSt-Sharing - Block 2 - func
+  ,ESP32_DeVICE_R_WSAP_IP_Adress				= (1<<7) // Bit #02 'WSAP_IP_Adress'		-> 
+  ,ESP32_DeVICE_R_WSAP_Netmask					= (1<<8) // Bit #02 'WSAP_Netmask'		-> 
+  ,ESP32_DeVICE_R_WSAP_Gateway_Adress			= (1<<9) // Bit #02 'WSAP_Gateway_Adress'	-> 
+
+  // Internals - TiSt-Sharing - Block 3 - func
+  ,ESP32_DeVICE_R_WSAP_MAC_Adress				= (1<<10) // Bit #04 'WSAP_MAC_Adress'		-> 
+
+  // Internals - TiSt-Sharing - Block 4 - func
+  ,ESP32_DeVICE_R_WSAP_WiFi_Bandwidth			= (1<<11) // Bit #07 'WSAP_WiFi_Bandwidth'	-> 
+
+  // Internals - TiSt-Sharing - Block 5 - func
+  ,ESP32_DeVICE_R_WiFi_Country					= (1<<12) // Bit #07 'WiFi_Country'		-> 
+
+  // Internals - TiSt-Sharing - Block 6 - func
+  ,ESP32_DeVICE_R_Station_IP_Adress				= (1<<13) // Bit #06 'Station_IP_Adress'	-> 
+  ,ESP32_DeVICE_R_Station_Netmask				= (1<<14) // Bit #06 'Station_Netmask'		-> 
+  ,ESP32_DeVICE_R_Station_Gateway_Adress		= (1<<15) // Bit #06 'Station_Gateway_Adress'	-> 
+
+  // Internals - TiSt-Sharing - Block 7 - func
+  ,ESP32_DeVICE_R_Station_MAC_Adress			= (1<<16) // Bit #11 'Station_MAC_Adress'	-> 
+
+  // Internals - TiSt-Sharing - Block 8 - func
+  ,ESP32_DeVICE_R_Station_Auto_Connect			= (1<<16) // Bit #09 'Station_Auto_Connect'	-> 
+
+  // Internals - TiSt-Sharing - Block 9 - func
+  ,ESP32_DeVICE_R_Station_WiFi_Bandwidth		= (1<<16) // Bit #07 'Station_WiFi_Bandwidth'	-> 
+
+
+
+
+
+
+  // Internals - TiSt-Sharing - Block 3 - func
+  ,ESP32_DeVICE_R_WSAP_DHCPS_Lease_Start_IP		= (1<<2) // Bit #03 'WSAP_DHCPS_Lease_Start_IP'	-> 
+  ,ESP32_DeVICE_R_WSAP_DHCPS_Lease_End_IP		= (1<<2) // Bit #03 'WSAP_DHCPS_Lease_End_IP'	-> 
+  ,ESP32_DeVICE_R_WSAP_DHCPS					= (1<<2) // Bit #03 'WSAP_DHCPS'		-> 
+
+
+  // Internals - TiSt-Sharing - Block 5 - func
+  ,ESP32_DeVICE_R_WSAP							= (1<<4) // Bit #05 'WSAP'			-> 
+
+
+  // Internals - TiSt-Sharing - Block 7 - func
+  ,ESP32_DeVICE_R_Station						= (1<<6) // Bit #07 'Station'			-> 
+
+  // Internals - TiSt-Sharing - Block 8 - func
+  ,ESP32_DeVICE_R_Station_DHCP					= (1<<7) // Bit #08 'Station_DHCP'		-> 
+
+
+  // Internals - TiSt-Sharing - Block 10 - func
+  ,ESP32_DeVICE_R_Station_Physical_Mode			= (1<<9) // Bit #10 'Station_Physical_Mode'	-> 
+
+
+  // Internals - TiSt-Sharing - Block 12 - func
+  ,ESP32_DeVICE_R_TiSt_NTP_Server_Main			= (1<<11) // Bit #12 'TiSt_NTP_Server_Main'	-> 
+  ,ESP32_DeVICE_R_TiSt_NTP_Server_Backup_1		= (1<<11) // Bit #12 'TiSt_NTP_Server_Backup_1'	-> 
+  ,ESP32_DeVICE_R_TiSt_NTP_Server_Backup_2		= (1<<11) // Bit #12 'TiSt_NTP_Server_Backup_2'	-> 
+  ,ESP32_DeVICE_R_TiSt_Time_Zone				= (1<<11) // Bit #12 'TiSt_Time_Zone'		-> 
+
+
+  // Readings - TiSt-Sharing - Block 1 - func
+  ,ESP32_DeVICE_R_Station_RSSI					= (1<<12) // Bit #13 'Station_RSSI'		-> 
+  ,ESP32_DeVICE_R_TiSt_Time						= (1<<12) // Bit #13 'TiSt_Time'		-> 
+
+  ,ESP32_DeVICE_R_Namex							= (1<<13) // Bit #02 'name' + caps + ufid -> 
+};
+
+
+
 
 
 
@@ -579,176 +536,596 @@ kvParseImplementedKeys_t ESP32_DeVICE_Set_ImplementedKeys[] =
 
 
 
+/**
+ * -------------------------------------------------------------------------------------------------
+ *  DName: ESP32_DeVICE_ActiveResourcesDataA_forWebIf
+ *  Desc: Resource-Content-structure of active Directory - PART A (Resource-Data-Row)
+ *  Data: WebIf_ActiveResourcesDataA_t[X] from HttpD.h
+ * -------------------------------------------------------------------------------------------------
+ */
+// Content:   AllowedMethodBF          | AllowedDocMimeBF  | AllowedSchemeBF |free|CgiNo| EnaByBit | Url
+const WebIf_ActiveResourcesDataA_t ESP32_DeVICE_ActiveResourcesDataA_forWebIf[] = {
+
+// Multi SCDE(es)-Feature Control
+  // GET http://192.168.0.24:80/SCDE .htm oder .jso
+  // POST http://192.168.0.24:80/SCDE .htm oder .jso
+  { 0b00000000000000000000000000001010, 0b0000000000001010, 0b0000000000000001,     0,    3, 0b00000000, "/SCDE"},
+
+  // SCDE-Feature Control (http + http compatibility resources incl. method compatibility mode) - adressing by seq. no. of definition (from this TYPE)
+  // GET http://192.168.0.24:80/3 .htm, .cgi, .jso, .set oder .get
+  // POST http://192.168.0.24:80/3 .htm, .cgi, .jso, .set oder .get
+  { 0b00000000000000000000000000001010, 0b0000000001011110, 0b0000000000000001,     0,    1, 0b00000000, "/\xf1/SCDE\x00 /SCDEX.htm"},
+
+  // SCDE-Feature Control (http + http compatibility resources incl. method compatibility mode) - adressing by NAME
+  // GET http://192.168.0.24:80/SSR.1.at.GPIO.13 .htm, .cgi, .jso, .set oder .get
+  // POST http://192.168.0.24:80/SSR.1.at.GPIO.13 .htm, .cgi, .jso, .set oder .get
+  { 0b00000000000000000000000000001010, 0b0000000001011110, 0b0000000000000001,     0,    1, 0b00000000, "/\xf3\x00 /SCDEX.htm"},
+
+// SCDE-Feature Control (Home Automation scheme SCDE incl. method compatibility mode) - adressing by seq. no. of definition (from this TYPE)
+  // GET scde://192.168.0.24:80/3                     SCDE-Feature-No.     Control - Home Automation Scheme SCDE:// access Resources
+  { 0b00000000000000000000000000000010, 0b0000000000000001, 0b0000000000000010,     0,    1, 0b00000000, "/\xf1\x00\x08"},
+  // SET scde://192.168.0.24:80/3                     SCDE-Feature-No.     Control - Home Automation Scheme SCDE:// access Resources
+  { 0b00000000000000000000000000000100, 0b0000000000000001, 0b0000000000000010,     0,    2, 0b00000000, "/\xf1\x00\x08"},
+    // kompatibilität - nötig ?
+    // GET scde://192.168.0.24:80/3.get                 SCDE-Feature-No.     Control - Home Automation Scheme SCDE:// access Resources
+    { 0b00000000000000000000000000000010, 0b0000000001000000, 0b0000000000000010,   0,    1, 0b00000000, "/\xf1\x00\x08"},
+    // GET scde://192.168.0.24:80/3.set                 SCDE-Feature-No.     Control - Home Automation Scheme SCDE:// access Resources
+    { 0b00000000000000000000000000000010, 0b0000000000010000, 0b0000000000000010,   0,    1, 0b00000000, "/\xf1\x00\x08"},
+
+//SCDE-Feature Control (Home Automation scheme SCDE incl. method compatibility mode) - adressing by NAME
+  // GET scde://192.168.0.24:80/SSR.1.at.GPIO.13      RENAMED SCDE-Feature Control - Home Automation SCDE:// access Resources
+  { 0b00000000000000000000000000000010, 0b0000000000000001, 0b0000000000000010,     0,    1, 0b00000000, "/\xf3\x00\x08"},
+  // SET scde://192.168.0.24:80/SSR.1.at.GPIO.13      RENAMED SCDE-Feature Control - Home Automation SCDE:// access Resources
+  { 0b00000000000000000000000000000100, 0b0000000000000001, 0b0000000000000010,     0,    2, 0b00000000, "/\xf3\x00\x08"},
+    // kompatibilität - nötig ?
+    // GET scde://192.168.0.24:80/SSR.1.at.GPIO.13.get  RENAMED SCDE-Feature Control - Home Automation SCDE:// access Resources
+    { 0b00000000000000000000000000000010, 0b0000000001000000, 0b0000000000000010,   0,    1, 0b00000000, "/\xf3\x00\x08"},
+    // GET scde://192.168.0.24:80/SSR.1.at.GPIO.13.set  RENAMED SCDE-Feature Control - Home Automation SCDE:// access Resources
+    { 0b00000000000000000000000000000010, 0b0000000000010000, 0b0000000000000010,   0,    1, 0b00000000, "/\xf3\x00\x08"},
 
 
+// old stuff
 
+  // SOC Hardware Cfg
+  { 0b00000000000000000000000000001010, 0b0000000000001110, 0b0000000000000001,  0,  4, 0b00000000, "/SoCHWCfg"}
 
+  // WiFi Stations Cfg
+ ,{ 0b00000000000000000000000000001010, 0b0000000000001110, 0b0000000000000001,  0,  5, 0b00000000, "/WiFi/StationCfg"}
 
+  // WIFI Q-Connect PAGES
+ ,{ 0b00000000000000000000000000001010, 0b0000000000000010, 0b0000000000000001,  0,  6, 0b00000000, "/WiFi/QConnect"}
+ ,{ 0b00000000000000000000000000001010, 0b0000000000001000, 0b0000000000000001,  0,  7, 0b00000000, "/WiFi/WiFiScan"}
+ ,{ 0b00000000000000000000000000001010, 0b0000000000000100, 0b0000000000000001,  0,  8, 0b00000000, "/WiFi/Connect"}
+ ,{ 0b00000000000000000000000000001010, 0b0000000000000100, 0b0000000000000001,  0,  9, 0b00000000, "/WiFi/Setmode"}
 
- // reading2_t *p_WSAP_Beacon_Interval;            // link to reading, maintained by this module
+  // Service Access Point Cfg
+ ,{ 0b00000000000000000000000000001010, 0b0000000000001110, 0b0000000000000001,  0, 10, 0b00000000, "/WiFi/ServAPCfg"}
 
+  // TimeStamp Cfg
+ ,{ 0b00000000000000000000000000001010, 0b0000000000001110, 0b0000000000000001,  0, 11, 0b00000000, "/TiStCfg"}
 
+  // Firmware Update
+ ,{ 0b00000000000000000000000000001010, 0b0000000000001110, 0b0000000000000001,  0, 12, 0b00000000, "/Firmware"}
 
+  // Redirects
+ ,{ 0b00000000000000000000000000001010, 0b0000000000000001, 0b0000000000000001,  0, 13, 0b00000000, "/WiFi"}	// nomime
+ ,{ 0b00000000000000000000000000001010, 0b0000000000000001, 0b0000000000000001,  0, 13, 0b00000000, "/WiFi/"}	// nomime
+ ,{ 0b00000000000000000000000000001010, 0b0000000000000001, 0b0000000000000001,  0, 14, 0b00000000, "/"}	// nomime
+ ,{ 0b00000000000000000000000000001010, 0b0000000000000010, 0b0000000000000001,  0, 14, 0b00000000, "/index"}	// .htm
 
+  // Secret services
+ ,{ 0b00000000000000000000000000001010, 0b0000000000100000, 0b0000000000000001,  0, 15, 0b00000000, "/32MBitFlash"}
+ ,{ 0b00000000000000000000000000001010, 0b0000000000100000, 0b0000000000000001,  0, 16, 0b00000000, "/wfs"}
 
+ ,{0,0,0,0,0,0,"*"}
+};
 
 
 
 /**
  * -------------------------------------------------------------------------------------------------
- *  FName: ESP32_DeVICE_APST2_WSAP_cb
- *  Desc: ArgParse Stage 2 parsing callback - for key 'WSAP'
-
- *  Info: - given stage 1 value should be an string 'OPT_STRING'
- *        - the destination-value should be of type 'uint8_t' 
- *  Para: struct argparse *self -> 
- *        const struct argparse_option *option -> 
- *        int flags ->  
- *        char ***stage1Value -> the input value (as a string)
- *  Rets: int result -> 0=OK, -3=ERROR(leadin error msg only, if any), do not use -2,-1  
+ *  DName: ESP32_DeVICE_ActiveResourcesDataB_forWebIf
+ *  Desc: Resource-Content-structure of active Directory - PART B (Procedure-Call-Data-Row) 
+ *  Data: WebIf_ActiveResourcesDataB_t[X] from HttpD.h
  * -------------------------------------------------------------------------------------------------
  */
- /*
-int
-ESP32_DeVICE_APST2_WSAP_cb_b(struct argparse *self
-                    ,const struct argparse_option *option
-                    ,int flags
-                    ,char ***stage1Value)
+// CgiFucID=(No.<<16)+AllowedSchemeBF |      cgi            |     cgi_data
+const WebIf_ActiveResourcesDataB_t ESP32_DeVICE_ActiveResourcesDataB_forWebIf[] =  {
+
+  // SCDE-Definition-Feature Control
+//  {(1<<16) +	0b0000000000000010,    WebIf_EspFSAdvFileTX, ESP32_SCDEtpl },
+//  {(1<<16) +	0b0000000000000100,    ESP32_SCDE_cgi,    	NULL },
+//  {(1<<16) +	0b0000000000001001,    ESP32_SCDE_jso,     	NULL }, // ohne, .jso,
+  {(1<<16) +	0b0000000001000000,    ESP32_SCDE_WEBIF_get,	NULL }, // experimental .get
+//  {(1<<16) +	0b0000000000010000,    ESP32_SCDE_set,   	NULL },
+//  {(2<<16) +	0b0000000000010001,    ESP32_SCDE_set,    	NULL }, // Ergänzung für .set ,2 ohne mime
+
+  // SCDE-Module-Feature Control (All SCDE(es)-Feature Control)
+//  {(3<<16) +	0b0000000000000010,    WebIf_EspFSAdvFileTX, ESP32_SCDE_tpl },
+//  {(3<<16) +	0b0000000000001000,    ESP32_SCDE_jso,     NULL }
+
+
+// old stuff
+
+  // ### SOC Hardware Cfg ###
+  {( 4<<16) +	0b0000000000000010,	NULL,NULL}//	EspFsTemplate_cgi,	SoCHWCfg_tpl	}
+ ,{( 4<<16) +	0b0000000000000100,	NULL,NULL}//	SoCHWCfg_cgi,		NULL		}
+ ,{( 4<<16) +	0b0000000000001000,	NULL,NULL}//	SoCHWCfg_jso,		NULL		}
+
+  // ### WiFi Station Cfg ###
+ ,{( 5<<16) +	0b0000000000000010,	NULL,NULL}//	EspFsTemplate_cgi,	StationCfg_tpl	}
+ ,{( 5<<16) +	0b0000000000000100,	NULL,NULL}//	StationCfg_cgi,		NULL		}
+ ,{( 5<<16) +	0b0000000000001000,	NULL,NULL}//	StationCfg_jso,		NULL		}
+
+  // ### WIFI Q-Connect PAGES ###
+ ,{( 6<<16) +	0b0000000000000010,	NULL,NULL}//	EspFsTemplate_cgi,	WifiQConnect_tpl}
+ ,{( 7<<16) +	0b0000000000001000,	NULL,NULL}//	WiFiScan_jso,		NULL		}
+ ,{( 8<<16) +	0b0000000000000100,	NULL,NULL}//	WiFiConnect_cgi,	NULL		}
+ ,{( 9<<16) +	0b0000000000000100,	NULL,NULL}//	WifiSetMode_cgi,	NULL		}	
+
+  // ### Service Access Point Cfg ###
+ ,{(10<<16) +	0b0000000000000010,	WebIf_EspFSAdvFileTX,	ServAPCfg_tpl	}
+ ,{(10<<16) +	0b0000000000000100,	NULL,NULL}//	ServAPCfg_cgi,		NULL		}
+ ,{(10<<16) +	0b0000000000001000,	NULL,NULL}//	ServAPCfg_jso,		NULL		}
+
+  // ### TimeStamp Cfg ###
+ ,{(11<<16) +	0b0000000000000010,	NULL,NULL}//	EspFsTemplate_cgi,	TiStCfg_tpl	}
+ ,{(11<<16) +	0b0000000000000100,	NULL,NULL}//	TiStCfg_cgi,		NULL		}
+ ,{(11<<16) +	0b0000000000001000,	NULL,NULL}//	TiStCfg_jso,		NULL		}
+
+  // ### Firmware Update ###
+ ,{(12<<16) +	0b0000000000000010,	NULL,NULL}//	EspFsTemplate_cgi,	FirmwareUd_tpl	}
+ ,{(12<<16) +	0b0000000000000100,	NULL,NULL}//	FirmwareUd_cgi,		NULL		}
+ ,{(12<<16) +	0b0000000000001000,	NULL,NULL}//	FirmwareUd_jso,		NULL		}
+
+  // ### Redirects ###
+ ,{(13<<16) +	0b0000000000000001,	cgiRedirect,	"/WiFi/QConnect.htm"		}
+ ,{(14<<16) +	0b0000000000000001,	cgiRedirect,	"/CoNTROL_8S-1C-1ADC.htm"	}
+ ,{(14<<16) +	0b0000000000000010,	cgiRedirect,	"/CoNTROL_8S-1C-1ADC.htm"	}
+
+  // ### Secret services ###
+ ,{(15<<16) +	0b0000000000100000,	ReadFullFlash_cgi,	NULL		}		//.bin
+ ,{(16<<16) +	0b0000000000100000,	NULL,NULL}//	WriteFileSystem_cgi,	NULL		}		//.bin
+};
+
+
+
+
+
+
+
+
+
+
+
+
+ProvidedByModule_t ESP32_DeVICE_ProvidedByModule;
+
+string_t
+ESP32_DeVICE_Get_Reading_State_As_Text(reading2_t *p_state_reading)
 {
-  // get ptr to wifi_ap_config_t
-  wifi_mode_t *wifi_mode =
-        (wifi_mode_t *)option->value;
+  string_t state_text;
+    
+  state_text.len = asprintf((char **) &state_text.p_char
+		  ,"%.*s"
+          ,p_state_reading->raw_data.len
+          ,p_state_reading->raw_data.p_char);
+  
+  return state_text;
+}
 
-  uint8_t new_wifi_mode;
+/*
+string_t
+ESP32_DeVICE_Get_Reading_Luminosity_As_Text(reading2_t *p_luminosity_reading)
+{
+  string_t luminosity_text;
+  
+  float luminosity = *((float *)p_luminosity_reading->raw_data.p_char);
+  
+  luminosity_text.len = asprintf((char **) &luminosity_text.p_char
+		  ,"%.1f lx"  // (lx)
+          ,luminosity);
+  
+  return luminosity_text;
+}
+*/
+// ESP32_DeVICE - embedded reading types
+enum ESP32_DeVICE_READING_TYPES {	// #XX desc for debugging
+  ESP32_DeVICE_STATE = 0		    // #00 start
+ ,ESP32_DeVICE_LUMINOSITY           // #01 luminosity lx, stored as float
+};
 
-  // check if the argument is in the allowed list
+// ESP32_DeVICE - embedded reading types
+reading_type_t ESP32_DeVICE_reading_types[] = { 
+ { // reading state
+  "STATE"      , 
+  "txt", 
+  &ESP32_DeVICE_ProvidedByModule, 
+  ESP32_DeVICE_Get_Reading_State_As_Text,
+  NULL
+ },/*
+ { // reading luminosity
+  "LUMINOSITY", 
+  "lx", 
+  &ESP32_DeVICE_ProvidedByModule, 
+  ESP32_DeVICE_Get_Reading_Luminosity_As_Text,
+  NULL
+ },*/
+ {NULL} // marks end of reading types
+};
 
-  if (SCDEH_GetQueryKeyID((uint8_t*) **stage1Value
-        ,strlen(**stage1Value)
-        ,(uint8_t*) &new_wifi_mode
-        ,&ESP32_DeVICE_DisEn) ) {
 
-    // store the parsed argument
-    wifi_mode = ( ((uint8_t) wifi_mode & 0b01) | (new_wifi_mode << 1) ) ;
 
-    // mark argument as sucessfully parsed
-    self->parsed_args_bf |= (1 << ESP32_DeVICE_Set_IK_WSAP);	
+/**
+ * -------------------------------------------------------------------------------------------------
+ *  DName: ESP32_DeVICE_Module
+ *  Desc: Data 'Provided By Module' for the ESP32Control module (functions + infos this module provides
+ *        to SCDE)
+ *  Data: 
+ * -------------------------------------------------------------------------------------------------
+ */
+ProvidedByModule_t
+ESP32_DeVICE_ProvidedByModule = { 	// A-Z order
+  "ESP32_DeVICE"					// Type-Name of module -> on Linux libfilename.so !
+  ,12								// size of Type-Name
 
-    return 0;	// OK
+  ,&ESP32_DeVICE_reading_types      // embedded reading types
+  
+  ,NULL								// Add
+  ,ESP32_DeVICE_Attribute			// Attribute
+  ,ESP32_DeVICE_Define				// Define
+  ,NULL								// Delete
+  ,NULL								// DirectRead
+  ,NULL								// DirectWrite
+  ,NULL								// Except
+  ,ESP32_DeVICE_Get					// Get
+  ,NULL								// IdleCb
+  ,ESP32_DeVICE_Initialize			// Initialize
+  ,ESP32_DeVICE_Notify				// Notify
+  ,NULL								// Parse
+  ,NULL								// Read
+  ,NULL								// Ready
+  ,ESP32_DeVICE_Rename				// Rename
+  ,ESP32_DeVICE_Set					// Set
+  ,ESP32_DeVICE_Shutdown			// Shutdown
+  ,ESP32_DeVICE_State				// State
+  ,NULL								// Sub
+  ,ESP32_DeVICE_Undefine			// Undefine
+  ,NULL								// Write
+  ,NULL								// FnProvided
+  ,sizeof(Entry_ESP32_DeVICE_Definition_t)	// Modul specific Size (Common_Definition_t + X)
+};
 
-  } else {
 
-	// argument is not in the allowed list
 
-    SCDEFn_at_ESP32_DeVICE_M->ArgParse_PrepareLeadinErrorMsgFn(self
-          ,option, "value not accepted", flags);
+/* -------------------------------------------------------------------------------------------------
+ *  FName: Attribute Fn
+ *  Desc: Informs an 'definition' of this 'module' for 'attribute' activities (set/delete)
+ *  Info: 'attr_cmmand' is the command for the activity: set, delete
+ *        'attr_name' is the attribute name
+ *        'attr_value' is the attribute value
+ *  Para: Common_Definition_t* p_entry_definition -> the 'definition' identified for the activities
+ *	  const String_t attr_command -> the attribute-command
+ *	  const String_t attr_name -> the attribute-name
+ *	  const String_t attr_value -> the attribute-value
+ *  Rets: Entry_String_t* -> = SCDE_OK (no ret msg) or VETO (SLTQ Entry_String_t* with ret msg)
+ * -------------------------------------------------------------------------------------------------
+ */
+Entry_String_t *
+ESP32_DeVICE_Attribute(entry_common_definition_t *p_entry_definition,
+	 const String_t attr_command,
+	 const String_t attr_name,
+	 const String_t attr_value)
+{
+  // make common ptr to modul specific ptr
+  Entry_ESP32_DeVICE_Definition_t* p_entry_esp32_device_definition =
+		  (Entry_ESP32_DeVICE_Definition_t*) p_entry_definition;
 
-    return -3;  // error msg -> leadin + usage
+  // to store the ret_msg. SCDE_OK = no msg 
+  Entry_String_t* p_entry_ret_msg = SCDE_OK;
+
+// -------------------------------------------------------------------------------------------------
+
+  #if ESP32_DeVICE_Module_DBG >= 5
+  SCDEFn_at_ESP32_DeVICE_M->Log3Fn(p_entry_esp32_device_definition->common.name,
+	p_entry_esp32_device_definition->common.nameLen,
+	5,
+	"Attribute Fn (Module '%.*s') is called with args: "
+	"attr_command '%.*s' attr_name '%.*s' attr_value '%.*s'",
+	p_entry_esp32_device_definition->common.module->provided->typeNameLen,
+	p_entry_esp32_device_definition->common.module->provided->typeName,attr_command.len,
+	attr_command.p_char,
+  	attr_name.len,
+	attr_name.p_char,
+	attr_value.len,
+	attr_value.p_char);
+  #endif
+
+// ------------------------------------------------------------------------------------------------
+
+  return p_entry_ret_msg;
+}
+
+
+
+/**
+ * -------------------------------------------------------------------------------------------------
+ *  FName: ESP32_DeVICE_Define
+ *  Desc: Finalizes the definition of a new "device" of 'ESP32Control' type.
+ *        Contains devicespecific init code.
+ *  Info: 
+ *  Para: Common_Definition_t *Common_Definition -> prefilled ESP32Control Definition
+ *        char *Definition -> the last part of the CommandDefine arg* 
+ *  Rets: strTextMultiple_t* -> response text NULL=no text
+ * -------------------------------------------------------------------------------------------------
+ */
+Entry_String_t *
+ESP32_DeVICE_Define(entry_common_definition_t *p_entry_common_definition)
+{
+  // the ret msg
+  entry_string_t *p_entry_ret_msg = SCDE_OK;
+
+  // make common ptr to modul specific ptr
+  Entry_ESP32_DeVICE_Definition_t* p_entry_ESP32_DeVICE_definition =
+		  (Entry_ESP32_DeVICE_Definition_t*) p_entry_common_definition;
+
+// -------------------------------------------------------------------------------------------------
+
+  #if ESP32_DeVICE_Module_DBG >= 5
+  SCDEFn_at_ESP32_DeVICE_M->Log3Fn(p_entry_common_definition->name
+	,p_entry_common_definition->nameLen
+	,5
+	,"Define Fn ('%.*s' Module), will continue creation of definition '%.*s' with args '%.*s'."
+	,p_entry_ESP32_DeVICE_definition->common.module->provided->typeNameLen
+	,p_entry_ESP32_DeVICE_definition->common.module->provided->typeName
+	,p_entry_ESP32_DeVICE_definition->common.nameLen
+	,p_entry_ESP32_DeVICE_definition->common.name
+	,p_entry_ESP32_DeVICE_definition->common.definition.len
+	,p_entry_ESP32_DeVICE_definition->common.definition.p_char);
+  #endif
+
+// -------------------------------------------------------------------------------------------------
+
+  // Check for args. This type requires args...
+  if (!p_entry_common_definition->definition.len) {
+
+	// alloc mem for ret_msg
+	p_entry_ret_msg = malloc(sizeof(Entry_String_t));
+
+	// response with error text
+	p_entry_ret_msg->string.len = asprintf(&p_entry_ret_msg->string.p_char
+		,"Error! Expected definition arguments.");
+
+	return p_entry_ret_msg;
   }
+
+// -------------------------------------------------------------------------------------------
+
+
+  // s1.1: The main task calls tcpip_adapter_init() to create an LwIP core task and 
+  //       initialize LwIP-related work.
+  tcpip_adapter_init();
+
+
+  // s1.2: The main task calls esp_event_loop_init() to create a system Event task and 
+  //       initialize an application event’s callback function. In the scenario above,
+  //       the application event’s callback function does nothing but relaying the event
+  //       to the application task.
+  wifi_event_group = xEventGroupCreate();
+
+  // install wifi event handler
+  ESP_ERROR_CHECK(esp_event_loop_init(ESP32_DeVICE_WiFiEventHandler, NULL) );
+
+
+  // s1.3: The main task calls esp_wifi_init() to create the Wi-Fi driver task
+  // and initialize the Wi-Fi driver.
+   wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
+
+   ESP_ERROR_CHECK( esp_wifi_init(&cfg) );
+
+
+
+
+
+
+  ESP_ERROR_CHECK( esp_wifi_set_storage(WIFI_STORAGE_RAM) );
+
+  ESP_ERROR_CHECK( esp_wifi_set_mode(WIFI_MODE_STA) );
+
+  wifi_config_t sta_config = {
+        .sta = {
+            .ssid = "SF4 AP",
+            .password = "pcmcia91",
+            .bssid_set = false
+        }
+  };
+
+  ESP_ERROR_CHECK( esp_wifi_set_config(WIFI_IF_STA, &sta_config) );
+
+
+  // s3.1: Call esp_wifi_start to start the Wi-Fi driver.
+  ESP_ERROR_CHECK( esp_wifi_start() );
+
+  ESP_ERROR_CHECK( esp_wifi_connect() );
+
+
+
+
+
+
+ // wait till wifi is connected
+  xEventGroupWaitBits(wifi_event_group
+		  , CONNECTED_BIT
+		  ,false
+		  ,true
+		  ,portMAX_DELAY);
+
+
+  // sync time via SNTP
+  Obtain_Time();
+
+
+
+
+// -------------------------------------------------------------------------------------------
+
+  // store FD to Definition. Will than be processed in global loop ... -> THIS MODULE USES NO FD
+  p_entry_ESP32_DeVICE_definition->common.fd = -1;
+
+// -------------------------------------------------------------------------------------------
+
+  // init WebIf_Provided offset
+//  p_entry_ESP32_DeVICE_definition->common.link =
+//	&p_entry_ESP32_DeVICE_definition->WebIf_Provided;
+
+  // check for loaded Module 'WebIf' -> get provided Fn
+  p_entry_ESP32_DeVICE_definition->WebIf_Provided.WebIf_FnProvided =
+	NULL;//(WebIf_FnProvided_t *) SCDEFn_at_ESP32_DeVICE_M->GetFnProvidedByModule("WebIf");
+
+ // Providing data for WebIf? Initialise data provided for WebIf
+  if (p_entry_ESP32_DeVICE_definition->WebIf_Provided.WebIf_FnProvided) {
+
+	p_entry_ESP32_DeVICE_definition->WebIf_Provided.ActiveResourcesDataA =
+		(WebIf_ActiveResourcesDataA_t *) &ESP32_DeVICE_ActiveResourcesDataA_forWebIf;
+
+	p_entry_ESP32_DeVICE_definition->WebIf_Provided.ActiveResourcesDataB =
+		(WebIf_ActiveResourcesDataB_t *) &ESP32_DeVICE_ActiveResourcesDataB_forWebIf;
+
+	}
+
+  else	{
+
+	SCDEFn_at_ESP32_DeVICE_M->Log3Fn(p_entry_common_definition->name
+		,p_entry_common_definition->nameLen
+		,1
+		,"Could not enable WebIf support for '%.*s'. "
+		 "Type '%.*s' detects Type 'WebIf' is NOT loaded!"
+		,p_entry_ESP32_DeVICE_definition->common.nameLen
+		,p_entry_ESP32_DeVICE_definition->common.name
+		,p_entry_ESP32_DeVICE_definition->common.module->provided->typeNameLen
+		,p_entry_ESP32_DeVICE_definition->common.module->provided->typeName);
+	}
+
+//temporary install web if resources here
+p_entry_ESP32_DeVICE_definition->common.ActiveResourcesDataA = 
+    &ESP32_DeVICE_ActiveResourcesDataA_forWebIf;
+p_entry_ESP32_DeVICE_definition->common.ActiveResourcesDataB = 
+    &ESP32_DeVICE_ActiveResourcesDataB_forWebIf;
+
+// -------------------------------------------------------------------------------------------
+
+  // Parse define-args (KEY=VALUE) protocol -> gets parsedKVInput in allocated mem, NULL = ERROR
+  parsedKVInputArgs_t *parsedKVInput = 
+	SCDEFn_at_ESP32_DeVICE_M->ParseKVInputArgsFn(ESP32_DeVICE_Set_NUMBER_OF_IK	// Num Implementated KEYs MAX
+	,ESP32_DeVICE_Set_ImplementedKeys				// Implementated Keys
+	,p_entry_common_definition->definition.p_char	// our args text
+	,p_entry_common_definition->definition.len);	// our args text len
+
+  // parsing may report an problem. args contain: unknown keys, double keys, ...?
+  if (!parsedKVInput) {
+
+	// alloc mem for ret_msg
+	p_entry_ret_msg = malloc(sizeof(Entry_String_t));
+
+	// response with error text
+	p_entry_ret_msg->string.len = asprintf(&p_entry_ret_msg->string.p_char
+		,"Parsing Error! Args '%.*s' not taken! Check the KEYs!"
+		,p_entry_common_definition->definition.len
+		,p_entry_common_definition->definition.p_char);
+
+	return p_entry_ret_msg;
+  }
+
+// ------------------------------------------------------------------------------------------------
+
+  // set required Keys -> Keys that should be there in this request
+  parsedKVInput->requiredKVBF = 0;/*( (1 << ESP32_SwITCH_SET_GPIO)
+			        | (1 << ESP32_SwITCH_SET_BLOCK)
+			        | (1 << ESP32_SwITCH_SET_CHANNEL)
+			        | (1 << ESP32_SwITCH_SET_TIMER)
+			        | (1 << ESP32_SwITCH_SET_DUTY)
+			        | (1 << ESP32_SwITCH_SET_HPOINT)
+			        | (1 << ESP32_SwITCH_SET_SIG_OUT_EN)
+			        | (1 << ESP32_SwITCH_SET_IDLE_LV)
+			        | (1 << ESP32_SwITCH_SET_RESOLUTION)
+			        | (1 << ESP32_SwITCH_SET_TICK_SOURCE)
+			        | (1 << ESP32_SwITCH_SET_FREQ_HZ) );*/
+
+  // set forbidden Keys -> Keys that are not allowed in this request
+  parsedKVInput->forbiddenKVBF = 0;
+/*
+  // process the set-args (key=value@) protocol
+  if (ESP32_DeVICE_ProcessKVInputArgs(p_entry_ESP32_DeVICE_definition
+	,parsedKVInput				// KVInput parsed
+	,p_entry_common_definition->definition.p_char				// our args text
+	,p_entry_common_definition->definition.len) ) {			// our args text len
+
+ 	// Processing reports an problem. Args not taken. Response with error text.
+	
+	// alloc mem for ret_msg
+	p_entry_ret_msg = malloc(sizeof(Entry_String_t));
+
+	// response with error text
+	p_entry_ret_msg->string.len = asprintf(&p_entry_ret_msg->string.p_char
+		,"Processing Error! Args '%.*s' not taken! Check the VALUEs!"
+		,p_entry_common_definition->definition.len
+		,p_entry_common_definition->definition.p_char);
+
+	return p_entry_ret_msg;
+  }
+*/
+// ------------------------------------------------------------------------------------------------
+
+  // set affected readings
+ // ESP32_DeVICE_SetAffectedReadings(p_entry_ESP32_DeVICE_definition
+//	,parsedKVInput->affectedReadingsBF);
+
+// ------------------------------------------------------------------------------------------------
+
+
+//old end
+/*
+  // free allocated memory for query result key-field
+  free(parsedKVInput);
+
+  return retMsg;
 }
 */
 
 
+free(parsedKVInput);
+
+// new end
 
 
+  // create maintained reading state (GLOBAL:STATE type), and store ptr in definition for fast access
+  p_entry_ESP32_DeVICE_definition->common.p_state_reading =
+      SCDEFn_at_ESP32_DeVICE_M->Create_Reading((entry_common_definition_t *)p_entry_ESP32_DeVICE_definition,
+          NULL, // use default ("state")
+          "initialized", // initial value as text, or NULL
+          "global", "state");//, 0);
+     
+// -------------------------------------------------------------------------------------------------
 
+  // ArgParseFn has allocated mem. Free it.
+//  SCDEFn_at_ESP32_DeVICE_M->ArgParse_FreeSplittedArgsInAllocatedMemFn(argv);
 
+  // set up 1st idle Callback
+//  p_entry_ESP32_DeVICE_definition->common.Common_CtrlRegA |= F_WANTS_IDLE_TASK;
 
+  return p_entry_ret_msg;
 
+// XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 
+//err:
 
+  // alternative end in case of errors - free / destroy all allocated things and return with ret msg.
 
+  // ArgParseFn has allocated mem. Free it.
+//  if (argv) SCDEFn_at_ESP32_DeVICE_M->ArgParse_FreeSplittedArgsInAllocatedMemFn(argv);
 
-
-
-
-/**
- * -------------------------------------------------------------------------------------------------
- *  FName: ESP32_DeVICE_APST2_WSAP_Beacon_Interval_cb
- *  Desc: ArgParse Stage 2 parsing callback - for key 'WSAP_Beacon_Interval'
- *  Info: - given stage 1 value should be an string 'OPT_INTEGER'
- *        - the destination-value should be of type 'uint8_t' 
- *  Para: struct argparse *self -> 
- *        const struct argparse_option *option -> 
- *        int flags ->  
- *        char ***stage1Value -> the input value (as a string)
- *  Rets: int result -> 0=OK, -3=ERROR(leadin error msg only, if any), do not use -2,-1  
- * -------------------------------------------------------------------------------------------------
- */
-int
-ESP32_DeVICE_APST2_WSAP_cb_b(struct argparse *self,
-    const struct argparse_option *option, int flags, char ***stage1Value)
-{
-  // get ptr to reading
-  reading2_t *p_WSAP =
-        (reading2_t *)option->value;
-
-  // store input-text to raw-readig
-  if (!p_WSAP->p_reading_type->p_Store_Raw_Reading_From_Text(p_WSAP,
-          **stage1Value)) {
-
-      SCDEFn_at_ESP32_DeVICE_M->ArgParse_PrepareLeadinErrorMsgFn(self
-          ,option, "arg not accepted as value", flags);
-
-      return -3;  // error msg -> leadin + usage
-  }
-
-  // mark argument as sucessfully parsed
-  self->parsed_args_bf |= (1 << ESP32_DeVICE_Set_IK_WSAP);	
-  
-  // mark reading as touched
-  self->affected_readings_bf |= (1 << ESP32_DeVICE_Set_IK_WSAP);	
-
-
-  return 0;	// OK
+  return p_entry_ret_msg;
 }
-
-/**
- * -------------------------------------------------------------------------------------------------
- *  FName: ESP32_DeVICE_APST2_WSAP_Beacon_Interval_cb
- *  Desc: ArgParse Stage 2 parsing callback - for key 'WSAP_Beacon_Interval'
- *  Info: - given stage 1 value should be an string 'OPT_INTEGER'
- *        - the destination-value should be of type 'uint8_t' 
- *  Para: struct argparse *self -> 
- *        const struct argparse_option *option -> 
- *        int flags ->  
- *        char ***stage1Value -> the input value (as a string)
- *  Rets: int result -> 0=OK, -3=ERROR(leadin error msg only, if any), do not use -2,-1  
- * -------------------------------------------------------------------------------------------------
- */
-int
-ESP32_DeVICE_APST2_WSAP_Beacon_Interval_cb_b(struct argparse *self,
-    const struct argparse_option *option, int flags, char ***stage1Value)
-{
-  // get ptr to reading
-  reading2_t *p_WSAP_Beacon_Interval =
-        (reading2_t *)option->value;
-
-  // store input-text to raw-readig
-  if (!p_WSAP_Beacon_Interval->p_reading_type->p_Store_Raw_Reading_From_Text(p_WSAP_Beacon_Interval,
-          **stage1Value)) {
-
-      SCDEFn_at_ESP32_DeVICE_M->ArgParse_PrepareLeadinErrorMsgFn(self
-          ,option, "arg not accepted as value", flags);
-
-      return -3;  // error msg -> leadin + usage
-  }
-
-  // mark argument as sucessfully parsed
-  self->parsed_args_bf |= (1 << ESP32_DeVICE_Set_IK_WSAP_Beacon_Interval);	
-  
-  // mark reading as touched
-  self->affected_readings_bf |= (1 << ESP32_DeVICE_Set_IK_WSAP_Beacon_Interval);	
-
-  return 0;	// OK
-}
-
-
-
-
-
-
-
 
 
 
@@ -1336,6 +1713,905 @@ ESP32_DeVICE_APST2_WIFI_COUNTRY_cb(struct argparse *self
 
 
 
+/* --- was soll das Gerät in FHEM können ---
+?, from available:
+
+Caps:noArg 
+
+Block #1
+Name  !! max32
+WSAP_Password !!max63
+WSAP_RF_Channel:uzsuSelectRadio,CH_1,CH_2,CH_3,CH_4,CH_5,CH_6,CH_7,CH_8,CH_9,CH_10,CH_11,CH_12,CH_13,CH_14 
+WSAP_Authentication_Method:uzsuSelectRadio,OPEN,WEP,WPA_PSK,WPA2_PSK,WPA_WPA2_PSK
+WSAP_SSID_Visibility:uzsuSelectRadio,VISIBLE,HIDDEN 
+WSAP_Maximal_Connections:slider,1,1,10
+WSAP_Beacon_Interval:slider,100,10,60000
+
+WSAP_IP_Adress 
+WSAP_Netmask 
+WSAP_Gateway_Adress 
+
+WSAP_DHCPS:uzsuSelectRadio,ENABLED,DISABLED 
+WSAP_DHCPS_Lease_Start_IP 
+WSAP_DHCPS_Lease_End_IP 
+
+WSAP_MAC_Adress 
+WSAP_State:uzsuSelectRadio,ENABLED,DISABLED 
+Station_IP_Adress 
+Station_Netmask 
+Station_Gateway_Adress 
+Station_State:uzsuSelectRadio,ENABLED,DISABLED 
+Station_DHCP:uzsuSelectRadio,ENABLED,DISABLED 
+Station_Auto_Connect:uzsuSelectRadio,ENABLED,DISABLED 
+Station_Physical_Mode:uzsuSelectRadio,802.11b,802.11g,802.11n 
+Station_Get_RSSI:noArg 
+Station_MAC_Adress 
+TiSt_NTP_Server_Main 
+TiSt_NTP_Server_Backup_1 
+TiSt_NTP_Server_Backup_2 
+TiSt_Time_Zone 
+TiSt_Get_Time 
+SoCHW_Restart:noArg 
+SoCHW_Factory_Reset_SCDE:noArg 
+SoCHW_Factory_Reset_CAPI:noArg 
+SoCHW_Factory_Reset:noArg 
+*/
+
+
+
+/** Get - New Version (2)
+ * -------------------------------------------------------------------------------------------------
+ *  FName: ESP32_DeVICE_Get V2
+ *  Desc: Implements the device-specific get function. Is used to get information from device.
+ *  Info: Typically invoked by cmd-line 'get ESP32Control_Definition.common.Name getArgs'
+ *             aa bbb ccc "dd d" ee         <- original string
+ *             ---------------------
+ *             aa0bbb0ccc00dd d00ee0        <- transformed string
+ *             |  |   |    |     |
+ *   argv[0] __/  /   /    /     /
+ *   argv[1] ____/   /    /     /
+ *   argv[2] _______/    /     /
+ *   argv[3] ___________/     /
+ *   argv[4] ________________/ 
+ *   Note: 1 args inside '""' are not splitted !
+ *  Para: Entry_Definition_t* p_definition -> the ESP32_DeVICE_Definition that should be processed
+ *        char **argv                      -> the arguments *argv[x]
+ *        int argc                         -> the number of arguments (x)
+ *  Rets: Entry_String_t* p_retMsg         -> response message as string, NULL=OK, without text
+ * -------------------------------------------------------------------------------------------------
+ */
+Entry_String_t*
+ESP32_DeVICE_GetV2(Entry_Definition_t* p_Definition
+                ,char **argv
+                ,int argc)
+{
+  // for Fn response msg
+  Entry_String_t *p_retMsg = NULL;
+
+  // make common ptr to modul specific ptr
+  Entry_ESP32_DeVICE_Definition_t* p_ESP32_DeVICE_Definition =
+	(Entry_ESP32_DeVICE_Definition_t*) p_Definition;
+
+// -------------------------------------------------------------------------------------------------
+
+  #if ESP32_DeVICE_Module_DBG >= 5
+  SCDEFn_at_ESP32_DeVICE_M->Log3Fn(p_Definition->name
+	,p_Definition->nameLen
+	,5
+	,"GetV2Fn of Module '%.*s' is called for Definition '%.*s'. Definition shall respond to GET arguments '%s'."
+	,p_Definition->module->provided->typeNameLen
+	,p_Definition->module->provided->typeName
+	,p_Definition->nameLen
+	,p_Definition->name
+	,*argv);
+  #endif	
+
+// -------------------------------------------------------------------------------------------------
+// 1. Step: Create backup structures, if required mirror current values from SDK
+// -------------------------------------------------------------------------------------------------
+
+  // block #01 get 'wifi_ap_config' (WSAP-Configuration)
+  wifi_ap_config_t wifi_ap_config;
+  esp_wifi_get_config (WIFI_IF_AP, &wifi_ap_config);
+
+// -------------------------------------------------------------------------------------------------
+
+  // block #02 get 'tcpip_adapter_ip_info_t' (WSAP-IP-Settings)
+  tcpip_adapter_ip_info_t ap_ip_info;
+  tcpip_adapter_get_ip_info(TCPIP_ADAPTER_IF_AP, &ap_ip_info);
+
+/*				 ( ESP32_DeVICE_R_WSAP_IP_Adress
+				    | ESP32_DeVICE_R_WSAP_Netmask
+				    | ESP32_DeVICE_R_WSAP_Gateway_Adress) ) {*/
+
+// -------------------------------------------------------------------------------------------------
+
+
+/*
+  ,ESP32_DeVICE_R_WSAP
+  ,ESP32_DeVICE_R_Station*/
+
+
+
+  // block #?? get 'wifi_mode_t' (WIFI WSAP+STA Configuration)
+  wifi_mode_t wifi_mode;
+  esp_wifi_get_mode(&wifi_mode);
+ 
+
+
+
+
+  // block #3 get current Service AP MAC Adress
+  uint8_t ap_mac_addr[8];
+  esp_wifi_get_mac(WIFI_IF_AP,(uint8_t *) &ap_mac_addr);
+
+  // block #4 get the bandwith of the Service Access Point
+  wifi_bandwidth_t ap_wifi_bandwidth;
+  esp_wifi_get_bandwidth(WIFI_IF_AP, &ap_wifi_bandwidth);
+
+  // block #5 get the WiFi Country
+//  wifi_country_t country;
+//  esp_wifi_get_country(&country);
+
+  // block #6 get current Station IP Settings
+  tcpip_adapter_ip_info_t sta_ip_info;
+  tcpip_adapter_get_ip_info(TCPIP_ADAPTER_IF_STA, &sta_ip_info);
+
+  // block #7 get current Station MAC Adress
+  uint8_t sta_mac_addr[8];
+  esp_wifi_get_mac(WIFI_IF_STA, (uint8_t *) &sta_mac_addr);
+
+  // block #8 get current Station Auto-Connect-Status
+  bool sta_autoconnect_status;
+//  esp_wifi_get_auto_connect(&sta_autoconnect_status);
+
+ // block #9 mirror 'wifi_bandwidth_t' (WIFI STA Configuration)
+  wifi_bandwidth_t wifiBandwidthSTA;
+  esp_wifi_get_bandwidth(WIFI_IF_STA, &wifiBandwidthSTA);
+
+ 		//(1 << ESP32_DeVICE_R_WSAP_WiFi_Bandwidth) ) {
+
+
+
+
+//#3
+  // block #6 get current Station Settings
+  wifi_config_t sta_wifi_config;
+  esp_wifi_get_config(WIFI_IF_STA, &sta_wifi_config);
+
+  // block #3 get current Service AP DHCP-Server-Status
+  tcpip_adapter_dhcp_status_t ap_dhcp_status;
+  tcpip_adapter_dhcps_get_status(TCPIP_ADAPTER_IF_AP,&ap_dhcp_status); 
+//esp_err_t tcpip_adapter_dhcps_stop(tcpip_adapter_if_t tcpip_if);
+//esp_err_t tcpip_adapter_dhcps_start(tcpip_adapter_if_t tcpip_if);
+
+  // block #8 get current Station DHCP-Client-Status
+  tcpip_adapter_dhcp_status_t sta_dhcp_status;
+  tcpip_adapter_dhcpc_get_status(TCPIP_ADAPTER_IF_STA,&sta_dhcp_status); 
+//esp_err_t tcpip_adapter_dhcpc_start(tcpip_adapter_if_t tcpip_if);
+//esp_err_t tcpip_adapter_dhcpc_stop(tcpip_adapter_if_t tcpip_if);
+
+
+
+/*
+
+  // block #13 mirror 'wifi_mode_t' (WIFI WSAP+STA Configuration)
+  wifi_mode_t wifi_mode;
+  if (parsedKVInput->keysFoundBF & (1 << ESP32_DeVICE_Set_IK_?) ) {
+
+	esp_wifi_get_mode(&wifi_mode);
+  }
+
+  // block #xx mirror 'wifi_ps_type_t' (WIFI WSAP+STA Configuration)
+  wifi_ps_type_t wifi_ps_type;
+  if (parsedKVInput->keysFoundBF & (1 << ESP32_DeVICE_Set_IK_?) ) {
+
+	esp_wifi_set_ps(&wifi_ps_type);
+  }
+
+  // block #xx mirror 'protocol_bitmap' (WIFI WSAP Configuration)
+  uint8_t protocolBitmapAP;
+  if (parsedKVInput->keysFoundBF & (1 << ESP32_DeVICE_Set_IK_?) ) {
+
+	esp_wifi_get_protocol(TCPIP_ADAPTER_IF_AP, &protocolBitmapAP);
+  }
+
+  // block #xx mirror 'protocol_bitmap' (WIFI STA Configuration)
+  uint8_t protocolBitmapSTA;
+  if (parsedKVInput->keysFoundBF & (1 << ESP32_DeVICE_Set_IK_?) ) {
+
+	esp_wifi_get_protocol(TCPIP_ADAPTER_IF_STA, &protocolBitmapSTA);
+  }
+
+ // block #xx mirror 'wifi_bandwidth_t' (WIFI WSAP Configuration)
+  wifi_bandwidth_t wifiBandwidthSTA;
+  if (parsedKVInput->keysFoundBF & (1 << ESP32_DeVICE_R_STA_WiFi_Bandwidth) ) {
+
+	esp_wifi_get_bandwidth(WIFI_IF_STA, &wifiBandwidthSTA);
+  }
+*/
+
+
+
+
+
+
+  // block #14 get current Wifi operating mode (Station + Service AP)
+  wifi_ps_type_t wifi_ps_type;
+  esp_wifi_get_ps(&wifi_ps_type);
+
+
+/*
+  // block #3 get current Service AP DHCP-Settings
+//spz    struct dhcps_lease dhcps_lease;
+//spz   wifi_softap_get_dhcps_lease(&dhcps_lease);
+
+//spz  // block #11 get current Station Physical Mode
+//spz  int WifiStationPhyMode = wifi_get_phy_mode();
+
+*/
+
+
+
+
+
+
+
+
+// -------------------------------------------------------------------------------------------------
+// 2. Step: Parse KEYs into mirrored data, including check if the given values match the requirements
+// -------------------------------------------------------------------------------------------------
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  // block #8 get current Station Auto-Connect-Status
+//  bool sta_autoconnect_status;
+ // esp_wifi_get_auto_connect(&sta_autoconnect_status);
+
+  // block #5 get the WiFi Country
+uint8_t country =2;
+//  wifi_country_t country;
+//  esp_wifi_get_country(&country);
+
+  printf("WIFI_COUNTRY=%s"
+         ,SCDE_GetDesc(ESP32_DeVICE_WIFI_COUNTRY, country));
+
+
+
+
+#define PERM_READ  (1<<0)
+#define PERM_WRITE (1<<1)
+#define PERM_EXEC  (1<<2)
+
+
+  // opt-group 1
+  int force = 0;
+  int test = 0;
+  const char *path = NULL;
+  int int_num = 0;
+  float flt_num = 0.f;
+
+  // opt-group 2
+  int perms = 0;
+
+  // opt-group 3
+  float flt_test2 = 0.f;
+  const char *path_test2 = NULL;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  // our supplied argparse struct
+  struct argparse argparse;
+
+  // various possible usages. no,1,2 ... - NULL marks end of list
+  static const char *const usages[] = {	//SET_usages
+	"set definition [options] [[--] args]",
+  	"set definition [options]",
+  	NULL,
+ };
+
+  struct argparse_option options[] = { //SET_options
+//	OPT_HELP(), // is 'h', "help", NULL, "show this help message and exit", argparse_help_cb, 0, OPT_NONEG)
+	OPT_BOOLEAN	 ('h', "help", 						NULL, 			  	"show this help message",   	argparse_help_cb,       							0, OPT_NONEG),
+    OPT_BOOLEAN  ('?', "?",                         NULL,             	"hctrl/fhem gets help",     	&ESP32_SwITCH_Set_H_cb, 							0, OPT_NONEG),  //noneg????
+
+    OPT_GROUP  ("Built-in Wireless-Service-Access-Point configuration"),
+    OPT_STRING   ('x', "WSAP",                      &wifi_mode,      	"DISABLED,ENABLED",          	&ESP32_DeVICE_APST2_WSAP_cb, 						0, 0),
+    OPT_STRING   ('n', "Name",                      &wifi_ap_config, 	"characters, max.31",  			&ESP32_DeVICE_APST2_Name_cb, 						0, 0),
+    OPT_STRING   ('p', "WSAP_Password",             &wifi_ap_config, 	"characters, max.63",         	&ESP32_DeVICE_APST2_WSAP_Password_cb, 				0, 0),
+    OPT_STRING   ('c', "WSAP_RF_Channel",           &wifi_ap_config, 	"CH_1 - CH_14",		           	&ESP32_DeVICE_APST2_WSAP_RF_Channel_cb, 			0, 0),
+    OPT_STRING   ('a', "WSAP_Authentication_Method",&wifi_ap_config, 	"OPEN,WPA2_PSK, ... try ?",		&ESP32_DeVICE_APST2_WSAP_Authentication_Method_cb, 	0, 0),
+    OPT_STRING   ('v', "WSAP_SSID_Visibility",      &wifi_ap_config, 	"VISIBLE,HIDDEN",              	&ESP32_DeVICE_APST2_WSAP_SSID_Visibility_cb, 		0, 0),
+    OPT_INTEGER  ('m', "WSAP_Maximal_Connections",  &wifi_ap_config, 	"1 - 10", 					 	&ESP32_DeVICE_APST2_WSAP_Maximal_Connections_cb, 	0, 0),
+    OPT_INTEGER  ('i', "WSAP_Beacon_Interval",      &wifi_ap_config,	"100 - 60000",			       	&ESP32_DeVICE_APST2_WSAP_Beacon_Interval_cb, 		0, 0),
+
+    OPT_GROUP  ("Device-to-Station connection configuration"),
+    OPT_STRING   ('y', "Station",                   &wifi_mode,   		"ENABLED,DISABLED",            	&ESP32_DeVICE_APST2_Station_cb, 					0, 0),
+    OPT_STRING   ('c', "WIFI_COUNTRY",   			&country,       	"station wifi country", 		&ESP32_DeVICE_APST2_WIFI_COUNTRY_cb, 				0, 0),
+    OPT_BOOLEAN  ('f', "Station_Auto_Connect",  	&sta_autoconnect_status,      "force to do", 		NULL, 												0, 0),
+    OPT_BOOLEAN  ('f', "force",  					&force,      		"force to do", 					NULL, 												0, 0),
+    OPT_BOOLEAN  ('t', "test",   					&test,       		"test only", 					NULL, 												0, 0),
+    OPT_STRING   ('p', "path",   					&path,       		"path to read", 				NULL, 												0, 0),
+    OPT_INTEGER  ('i', "int",    					&int_num,    		"selected integer", 			NULL, 												0, 0),
+    OPT_FLOAT    ('s', "float",  					&flt_num,    		"selected float", 				NULL, 												0, 0),
+
+    OPT_GROUP  ("Debug testing configuration"),
+    OPT_BIT      ( 0 , "read",   					&perms,      		"read perm", 					NULL, 												PERM_READ, OPT_NONEG),
+    OPT_BIT      ( 0 , "write",  					&perms,      		"write perm", 					NULL, 												PERM_WRITE, 0),
+    OPT_BIT      ( 0 , "exec",   					&perms,      		"exec perm", 					NULL, 												PERM_EXEC, 0),
+
+    OPT_GROUP  ("Time configuration"),
+    OPT_FLOAT    ('x', "float2", 					&flt_test2,  		"selected float2", 				NULL, 												0, 0),
+    OPT_STRING   ('y', "path2",  					&path_test2, 		"path to read2", 				NULL, 												0, 0),
+    OPT_END(),
+  };
+
+  // init the arg-parse Fn
+  p_retMsg = SCDEFn_at_ESP32_DeVICE_M->ArgParse_InitFn(&argparse
+	,options
+	,usages
+	,0	// flags: ARGPARSE_STOP_AT_NON_OPTION ?
+	,"\nTo SET the configuration of the ESP32 DeVICE"										// prolog usage
+	,"\nUse command help ESP32_DeVICE to get the detailed description of the arguments.");	// epilog usage
+  if (p_retMsg) goto error2;	// got an error-msg text -> send it to the user!
+
+  // call the parse Fn
+  p_retMsg = SCDEFn_at_ESP32_DeVICE_M->ArgParse_ParseFn(&argparse, argc, argv);
+  if (p_retMsg) goto error2;	// got an error-msg text -> send it to the user!
+
+  // wie genau?? mem leak?
+  // get the resulting args-no from arg parse fn
+  argc = argparse.cpidx + argparse.argc;
+
+
+  if (argc < 0) printf("An error occured? argc: %d\n", argc);
+
+
+
+
+
+
+
+  // deep debug
+  printf("\nDeep debugging, parsed args bf: %lld, listing parsed values:\n",
+  	 argparse.parsed_args_bf);
+
+  // debugout ssid aka name, if found ...
+  if (argparse.parsed_args_bf & (1 << ESP32_DeVICE_Set_IK_Name) ) {
+  	printf("parsed name=%.*s\n"
+		,wifi_ap_config.ssid_len
+		,wifi_ap_config.ssid);
+  }
+
+  // debugout WSAP_Password, if found ...
+  if (argparse.parsed_args_bf & (1 << ESP32_DeVICE_Set_IK_WSAP_Password) ) {
+  	printf("parsed WSAP_Password=%s\n"
+		,wifi_ap_config.password);
+  }
+
+  // debugout WSAP_RF_Channel, if found ...
+  if (argparse.parsed_args_bf & (1 << ESP32_DeVICE_Set_IK_WSAP_RF_Channel) ) {
+  	printf("parsed WSAP_RF_Channel=%d\n"
+		,wifi_ap_config.channel);
+  }
+
+  // debugout WSAP_Authentication_Method, if found ...
+  if (argparse.parsed_args_bf & (1 << ESP32_DeVICE_Set_IK_WSAP_Authentication_Method) ) {
+  	printf("WSAP_Authentication_Method=%d\n"
+		,wifi_ap_config.authmode);
+  }
+
+  // debugout WSAP_SSID_Visibility, if found ...
+  if (argparse.parsed_args_bf & (1 << ESP32_DeVICE_Set_IK_WSAP_SSID_Visibility) ) {
+  	printf("WSAP_SSID_Visibility=%d\n"
+		,wifi_ap_config.ssid_hidden);
+  }
+
+  // debugout WSAP_Maximal_Connections, if found ...
+  if (argparse.parsed_args_bf & (1 << ESP32_DeVICE_Set_IK_WSAP_Maximal_Connections) ) {
+  	printf("WSAP_Maximal_Connections=%d\n"
+		,wifi_ap_config.max_connection);
+  }
+
+  // debugout WSAP_Beacon_Interval, if found ...
+  if (argparse.parsed_args_bf & (1 << ESP32_DeVICE_Set_IK_WSAP_Beacon_Interval) ) {
+  	printf("WSAP_Beacon_Interval=%d\n"
+		,wifi_ap_config.beacon_interval);
+  }
+
+ // debugout WSAP, if found ...
+  if (argparse.parsed_args_bf & (1 << ESP32_DeVICE_Set_IK_WSAP) ) {
+  	printf("WSAP=%d\n"
+		,( (uint8_t) wifi_mode & 0b10) >>1 );
+  }
+  
+ // debugout Station, if found ...
+  if (argparse.parsed_args_bf & (1 << ESP32_DeVICE_Set_IK_Station) ) {
+  	printf("Station=%d\n"
+
+		,((uint8_t) wifi_mode & 0b01) );
+  }
+
+
+
+
+
+
+/*
+Was wir brauchen:
+
+  // set enabled keys -> keys that are currently enabled (for devices that change behviour)
+  parsedKVInput->enabledKVBF = 0;
+
+  // set required Keys -> Keys that should be there in this request
+  parsedKVInput->requiredKVBF = ( (1 << ESP32_SwITCH_SET_GPIO)
+			        | (1 << ESP32_SwITCH_SET_BLOCK)
+			        | (1 << ESP32_SwITCH_SET_CHANNEL)
+			        | (1 << ESP32_SwITCH_SET_TIMER)
+			        | (1 << ESP32_SwITCH_SET_DUTY)
+			        | (1 << ESP32_SwITCH_SET_HPOINT)
+			        | (1 << ESP32_SwITCH_SET_SIG_OUT_EN)
+			        | (1 << ESP32_SwITCH_SET_IDLE_LV)
+			        | (1 << ESP32_SwITCH_SET_RESOLUTION)
+			        | (1 << ESP32_SwITCH_SET_TICK_SOURCE)
+			        | (1 << ESP32_SwITCH_SET_FREQ_HZ) );
+
+  // set forbidden Keys -> Keys that are not allowed in this request
+  parsedKVInput->forbiddenKVBF = 0;
+
++ timestamp für readings (reading blocks)
+*/
+
+
+
+
+
+
+
+
+
+
+  // opt-group 1
+  if (force != 0)
+        printf("force: %d\n", force);
+  if (test != 0)
+        printf("test: %d\n", test);
+  if (path != NULL)
+        printf("path: %s\n", path);
+  if (int_num != 0)
+        printf("int_num: %d\n", int_num);
+  if (flt_num != 0)
+        printf("flt_num: %g\n", flt_num);
+
+  // opt-group 2
+  if (perms) {
+        printf("perms: %d\n", perms);
+  }
+ 
+  // opt-group 3
+  if (flt_test2 != 0)
+        printf("flt_test2: %g\n", flt_test2);
+
+  if (path_test2 != NULL)
+        printf("path_test2: %s\n", path_test2);
+
+  // the rest ..
+  if (argc > 0) { //!=
+        printf("other args: %d\n", argc);
+        int i;
+        for (i = 0; i < argc; i++) {
+            printf("argv[%d]: %s\n", i, *(argv + i));
+        } 
+  }
+
+// wie kann festgestellt werden ob eine Eingabe erfolgte z.B. float 0 ?
+
+  printf("WIFI_COUNTRY=%s"
+         ,SCDE_GetDesc(ESP32_DeVICE_WIFI_COUNTRY, country));
+
+// ------------------------------------------------------------------------------------------------
+
+
+
+
+
+
+
+
+
+
+
+
+  // remember the readings affected by the parsing process
+  // on value change can affect multipe readings -> bitfield
+  uint32_t affectedReadings = 0;
+
+ // debugview all readings
+  affectedReadings = 0xffffffff;
+
+ printf ("AffectedReadings:%d", affectedReadings);
+ 
+ 
+// -------------------------------------------------------------------------------------------------
+// 5. Step: update the Readings according to 'affectedReadings' - if any ...
+// -------------------------------------------------------------------------------------------------
+
+  // update the Readings according to 'affectedReadings' - if any ...
+  if (affectedReadings) {
+  
+    // temp, for reading creation
+    String_t reading_name;
+    String_t reading_value;
+
+	SCDEFn_at_ESP32_DeVICE_M->readings_begin_update_fn((Common_Definition_t*) p_ESP32_DeVICE_Definition);
+
+// ------------------------------------------------------------------------------------------------- 
+
+	// Reading 'Name'
+	if (affectedReadings & ESP32_DeVICE_R_Name) {
+
+	    reading_name.len = strlen((const char *) ESP32_DeVICE_Set_ImplementedKeys[ESP32_DeVICE_Set_IK_Name].implementedKey);
+	    reading_name.p_char = (const uint8_t *) ESP32_DeVICE_Set_ImplementedKeys[ESP32_DeVICE_Set_IK_Station_Auto_Connect].implementedKey;
+	    reading_value.len = wifi_ap_config.ssid_len;
+	    reading_value.p_char = wifi_ap_config.ssid;
+/*		
+	    SCDEFn_at_ESP32_DeVICE_M->readings_bulk_update_fn((Common_Definition_t*) p_ESP32_DeVICE_Definition
+		    ,reading_name
+		    ,reading_value
+		    ,true,0);
+*/
+
+/*
+		// create / update reading
+		SCDEFn_at_ESP32_DeVICE_M->readings_bulk_update2_fn((Common_Definition_t*) p_ESP32_DeVICE_Definition
+			,strlen((const char *) ESP32_DeVICE_Set_ImplementedKeys[ESP32_DeVICE_Set_IK_Name].implementedKey)
+			,(const uint8_t *) ESP32_DeVICE_Set_ImplementedKeys[ESP32_DeVICE_Set_IK_Name].implementedKey
+			,wifi_ap_config.ssid_len
+			,wifi_ap_config.ssid
+			,true);*/
+	}
+
+// -------------------------------------------------------------------------------------------------
+/*
+	// Reading 'WSAP_Password'
+	if (affectedReadings & ESP32_DeVICE_R_WSAP_Password) {
+
+		// create / update reading
+		SCDEFn_at_ESP32_DeVICE_M->readings_bulk_update2_fn((Common_Definition_t*) p_ESP32_DeVICE_Definition
+			,strlen((const char *) ESP32_DeVICE_Set_ImplementedKeys[ESP32_DeVICE_Set_IK_WSAP_Password].implementedKey)
+			,(const uint8_t *) ESP32_DeVICE_Set_ImplementedKeys[ESP32_DeVICE_Set_IK_WSAP_Password].implementedKey
+			,strlen((char *) wifi_ap_config.password)
+			,wifi_ap_config.password
+			,true);
+	}
+
+// ------------------------------------------------------------------------------------------------- 
+
+	// Reading 'WSAP_RF_Channel'
+	if (affectedReadings & ESP32_DeVICE_R_WSAP_RF_Channel) {
+
+		// create / update reading
+		SCDEFn_at_ESP32_DeVICE_M->readings_bulk_update2_fn((Common_Definition_t*) p_ESP32_DeVICE_Definition
+			,strlen((const char *) ESP32_DeVICE_Set_ImplementedKeys[ESP32_DeVICE_Set_IK_WSAP_RF_Channel].implementedKey)
+			,(const uint8_t *) ESP32_DeVICE_Set_ImplementedKeys[ESP32_DeVICE_Set_IK_WSAP_RF_Channel].implementedKey
+			,strlen(SCDE_GetDesc(ESP32_DeVICE_CHANNEL, wifi_ap_config.channel))
+			,(const uint8_t *) SCDE_GetDesc(ESP32_DeVICE_CHANNEL, wifi_ap_config.channel)
+			,true);
+	}
+	
+// ------------------------------------------------------------------------------------------------- 
+
+	// Reading 'WSAP_Maximal_Connections'
+	if (affectedReadings & ESP32_DeVICE_R_WSAP_Maximal_Connections) {
+
+		String_t WSAP_Maximal_Connections;
+
+		// create temporary text
+		WSAP_Maximal_Connections.len = asprintf(&WSAP_Maximal_Connections.p_char,"%d"
+			,wifi_ap_config.max_connection);
+
+		// create / update reading
+		SCDEFn_at_ESP32_DeVICE_M->readings_bulk_update2_fn((Common_Definition_t*) p_ESP32_DeVICE_Definition
+			,strlen((const char *) ESP32_DeVICE_Set_ImplementedKeys[ESP32_DeVICE_Set_IK_WSAP_Maximal_Connections].implementedKey)
+			,(const uint8_t *) ESP32_DeVICE_Set_ImplementedKeys[ESP32_DeVICE_Set_IK_WSAP_Maximal_Connections].implementedKey
+			,WSAP_Maximal_Connections.len
+			,WSAP_Maximal_Connections.p_char
+			,true);
+			
+		free(WSAP_Maximal_Connections.p_char);
+	}
+
+// ------------------------------------------------------------------------------------------------- 
+
+	// Reading 'WSAP_Authentication_Method'
+	if (affectedReadings & ESP32_DeVICE_R_WSAP_Authentication_Method) {
+
+ 		// create / update reading
+		SCDEFn_at_ESP32_DeVICE_M->readings_bulk_update2_fn((Common_Definition_t*) p_ESP32_DeVICE_Definition
+			,strlen((const char *) ESP32_DeVICE_Set_ImplementedKeys[ESP32_DeVICE_Set_IK_WSAP_Authentication_Method].implementedKey)
+			,(const uint8_t *) ESP32_DeVICE_Set_ImplementedKeys[ESP32_DeVICE_Set_IK_WSAP_Authentication_Method].implementedKey
+			,strlen(SCDE_GetDesc(ESP32_DeVICE_AUTH_MODE, wifi_ap_config.ssid_hidden))
+			,(const uint8_t *) SCDE_GetDesc(ESP32_DeVICE_AUTH_MODE, wifi_ap_config.ssid_hidden)
+			,true);
+	}
+
+// ------------------------------------------------------------------------------------------------- 
+
+	// Reading 'WSAP_SSID_Visibility'
+	if (affectedReadings & ESP32_DeVICE_R_WSAP_SSID_Visibility) {
+
+		// create / update reading
+		SCDEFn_at_ESP32_DeVICE_M->readings_bulk_update2_fn((Common_Definition_t*) p_ESP32_DeVICE_Definition
+			,strlen((const char *) ESP32_DeVICE_Set_ImplementedKeys[ESP32_DeVICE_Set_IK_WSAP_SSID_Visibility].implementedKey)
+			,(const uint8_t *) ESP32_DeVICE_Set_ImplementedKeys[ESP32_DeVICE_Set_IK_WSAP_SSID_Visibility].implementedKey
+			,strlen(SCDE_GetDesc(ESP32_DeVICE_SSID_VISIBILITY, wifi_ap_config.authmode))
+			,(const uint8_t *) SCDE_GetDesc(ESP32_DeVICE_SSID_VISIBILITY, wifi_ap_config.authmode)
+			,true);
+	}
+
+// ------------------------------------------------------------------------------------------------- 
+
+	// Reading 'WSAP_Beacon_Interval'
+	if (affectedReadings & ESP32_DeVICE_R_WSAP_Beacon_Interval) {
+
+		String_t WSAP_Beacon_Interval;
+
+		// create temporary text
+		WSAP_Beacon_Interval.len = asprintf(&WSAP_Beacon_Interval.p_char,"%d"
+			,wifi_ap_config.beacon_interval);
+
+		// create / update reading
+		SCDEFn_at_ESP32_DeVICE_M->readings_bulk_update2_fn((Common_Definition_t*) p_ESP32_DeVICE_Definition
+			,strlen((const char *) ESP32_DeVICE_Set_ImplementedKeys[ESP32_DeVICE_Set_IK_WSAP_Beacon_Interval].implementedKey)
+			,(const uint8_t *) ESP32_DeVICE_Set_ImplementedKeys[ESP32_DeVICE_Set_IK_WSAP_Beacon_Interval].implementedKey
+			,WSAP_Beacon_Interval.len
+			,WSAP_Beacon_Interval.p_char
+			,true);
+			
+		free(WSAP_Beacon_Interval.p_char);
+	}
+	
+// ------------------------------------------------------------------------------------------------- 
+
+	// Reading 'WSAP'
+	if (affectedReadings & ESP32_DeVICE_R_WSAP) {
+
+		// create / update reading
+		SCDEFn_at_ESP32_DeVICE_M->readings_bulk_update2_fn((Common_Definition_t*) p_ESP32_DeVICE_Definition
+			,strlen((const char *) ESP32_DeVICE_Set_ImplementedKeys[ESP32_DeVICE_Set_IK_WSAP].implementedKey)
+			,(const uint8_t *) ESP32_DeVICE_Set_ImplementedKeys[ESP32_DeVICE_Set_IK_WSAP].implementedKey
+			,strlen(SCDE_GetDesc(ESP32_DeVICE_DisEn, (( (uint8_t) wifi_mode & 0b10) >>1 ) ))
+			,(const uint8_t *) SCDE_GetDesc(ESP32_DeVICE_DisEn, (((uint8_t) wifi_mode & 0b10)>>1)  )
+			,true);
+	}
+
+// ------------------------------------------------------------------------------------------------- 
+
+	// Reading 'Station'
+	if (affectedReadings & ESP32_DeVICE_R_Station) {
+
+		// create / update reading
+		SCDEFn_at_ESP32_DeVICE_M->readings_bulk_update2_fn((Common_Definition_t*) p_ESP32_DeVICE_Definition
+			,strlen((const char *) ESP32_DeVICE_Set_ImplementedKeys[ESP32_DeVICE_Set_IK_Station].implementedKey)
+			,(const uint8_t *) ESP32_DeVICE_Set_ImplementedKeys[ESP32_DeVICE_Set_IK_Station].implementedKey
+			,strlen(SCDE_GetDesc(ESP32_DeVICE_DisEn, ((uint8_t) wifi_mode & 0b01) ))
+			,(const uint8_t *) SCDE_GetDesc(ESP32_DeVICE_DisEn, ((uint8_t) wifi_mode & 0b01) )
+			,true);
+	}
+*/
+// -------------------------------------------------------------------------------------------------
+
+  SCDEFn_at_ESP32_DeVICE_M->readings_end_update_fn((Common_Definition_t*) p_ESP32_DeVICE_Definition, true);
+  }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// ------------------------------------------------------------------------------------------------
+
+error2:
+
+// ------------------------------------------------------------------------------------------------
+
+//error1:
+
+  return p_retMsg;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+/**
+ * -------------------------------------------------------------------------------------------------
+ *  FName: ESP32_DeVICE_Get
+ *  Desc: Processes the device-specific command line arguments from the get command
+ *  Info: Invoked by cmd-line 'Get ESP32Control_Definition.common.Name getArgs'
+ *  Para: ESP32Control_Definition_t *ESP32Control_Definition -> WebIF Definition that should get a set cmd
+ *        uint8_t *getArgsText -> the getArgsText
+ *        size_t getArgsTextLen -> length of the getArgsText
+ *  Rets: strTextMultiple_t* -> response text in allocated memory, NULL=no text
+ * -------------------------------------------------------------------------------------------------
+ */
+strTextMultiple_t*
+ESP32_DeVICE_Get(Common_Definition_t* Common_Definition
+                ,uint8_t *getArgsText
+                ,size_t getArgsTextLen)
+{
+
+  // for Fn response msg
+  strTextMultiple_t *retMsg = NULL;
+
+  // make common ptr to modul specific ptr
+  Entry_ESP32_DeVICE_Definition_t* ESP32_DeVICE_Definition =
+	(Entry_ESP32_DeVICE_Definition_t*) Common_Definition;
+
+// -------------------------------------------------------------------------------------------------
+
+  #if ESP32_DeVICE_Module_DBG >= 5
+  SCDEFn_at_ESP32_DeVICE_M->Log3Fn(Common_Definition->name
+	,Common_Definition->nameLen
+	,5
+	,"GetFn of Module '%.*s' is called for Definition '%.*s'. Definition shall respond to GET arguments '%.*s'."
+	,Common_Definition->module->provided->typeNameLen
+	,Common_Definition->module->provided->typeName
+	,Common_Definition->nameLen
+	,Common_Definition->name
+	,getArgsTextLen
+	,getArgsText);
+  #endif	
+
+// -------------------------------------------------------------------------------------------------
+
+  // note: call to _Get Fn is blocked with getArgsTextLen = 0 !
+
+/*
+  // note: '?' KEY is not emplemented -> the error-msg is the correct answer !
+
+  // getArgsText '?' -> respond with help
+  if ( (getArgsTextLen > 0) && (*getArgsText == 'X') ) {
+
+	// set start of possible Type-Name
+	const uint8_t *tempTxt = getArgsText + 1;
+
+	// a seek-counter
+	int i = 1;
+
+	// skip spaces after '?' (search for more ...)
+	while( (i < getArgsTextLen) && (*tempTxt == ' ') ) {i++;tempTxt++;}
+
+
+	// only spaces after '?' -> answer with get-Capabilities
+	if (i == getArgsTextLen) {
+
+		// response with error text
+		// alloc mem for retMsg
+		retMsg = malloc(sizeof(strTextMultiple_t));
+
+		// response with error text
+		retMsg->strTextLen = asprintf(&retMsg->strText
+			,"requested ? '%.*s' ! This will be removed..."
+			,getArgsTextLen
+			,getArgsText);
+
+		return retMsg;
+
+		}
+	// '? + X' here !!! -> normal parse -> will throw error in next step
+	}
+*/
+// ------------------------------------------------------------------------------------------------
+
+  char **argv;
+  int argc;
+
+  // split 'getArgsText' the default way
+  argv = SCDEFn_at_ESP32_DeVICE_M->ArgParse_SplitArgsToAllocatedMemFn(&argc, getArgsText, getArgsTextLen);
+
+  retMsg = (strTextMultiple_t*) ESP32_DeVICE_GetV2(Common_Definition
+                ,argv, argc);
+
+
+  // ArgParseFn has allocated mem. Free it.
+  SCDEFn_at_ESP32_DeVICE_M->ArgParse_FreeSplittedArgsInAllocatedMemFn(argv);
+
+// ------------------------------------------------------------------------------------------------
+
+  return retMsg;
+}
+
+
+
+
 
 
 
@@ -1363,6 +2639,169 @@ printf("HELP-callback\n");
 
 
 
+
+
+/**
+ * -------------------------------------------------------------------------------------------------
+ *  FName: Initialize Fn
+ *  Desc: Initializion of SCDE Function Callbacks of an new loaded module
+ *  Info: Stores Module-Information (Function Callbacks) to SCDE-Root
+ *  Para: SCDERoot_t* SCDERootptr -> ptr to SCDE Data Root
+ *  Rets: ? unused
+ *--------------------------------------------------------------------------------------------------
+ */
+int 
+ESP32_DeVICE_Initialize(SCDERoot_t* SCDERootptr)
+{
+  // make data root locally available
+  SCDERoot_at_ESP32_DeVICE_M = SCDERootptr;
+
+  // make locally available from data-root: SCDEFn (Functions / callbacks) for faster operation
+  SCDEFn_at_ESP32_DeVICE_M = SCDERootptr->SCDEFn;
+
+// -------------------------------------------------------------------------------------------------
+
+  #if ESP32_DeVICE_Module_DBG >= 3
+  SCDEFn_at_ESP32_DeVICE_M->Log3Fn(
+       ESP32_DeVICE_ProvidedByModule.typeName
+	  ,ESP32_DeVICE_ProvidedByModule.typeNameLen
+	  ,3
+	  ,"Executing InitializeFn of Module '%.*s' to make it useable."
+	  ,ESP32_DeVICE_ProvidedByModule.typeNameLen
+	  ,ESP32_DeVICE_ProvidedByModule.typeName);
+  #endif
+
+// -------------------------------------------------------------------------------------------------
+
+  return 0;
+}
+
+
+
+/* -------------------------------------------------------------------------------------------------
+ *  FName: Notify Fn
+ *  Desc: Informs an 'definition' of this 'module' for 'reading' and 'state' changes
+ *  Info: 
+ *  Para: Entry_Common_Definition_t *p_notifying_entry_common_definition -> the 'definition' identified for the activities
+ *	      Entry_Common_Definition_t *p_own_entry_common_definition -> the 'definition' identified for the activities
+ *  Rets: Entry_String_t* -> = SCDE_OK (no ret msg) or SLTQ Entry_String_t* with ret msg
+ * -------------------------------------------------------------------------------------------------
+ */
+Entry_String_t *
+ESP32_DeVICE_Notify(Entry_Common_Definition_t *p_notifying_entry_common_definition,
+    Entry_Common_Definition_t *p_own_entry_common_definition)
+{
+  // make common ptr to modul specific ptr
+  Entry_ESP32_DeVICE_Definition_t* p_entry_esp32_device_definition =
+		  (Entry_ESP32_DeVICE_Definition_t*) p_own_entry_common_definition;
+
+  // to store the ret_msg. SCDE_OK = no msg 
+  Entry_String_t *p_entry_ret_msg = SCDE_OK;
+
+// -------------------------------------------------------------------------------------------------
+
+  #if ESP32_DeVICE_Module_DBG >= 5
+  SCDEFn_at_ESP32_DeVICE_M->Log3Fn(p_entry_esp32_device_definition->common.name,
+	p_entry_esp32_device_definition->common.nameLen,
+	5,
+	"Notify Fn (Module '%.*s') is called. Definition '%.*s' (Module '%.*s') informs about pending notifies.",
+	p_entry_esp32_device_definition->common.module->provided->typeNameLen,
+	p_entry_esp32_device_definition->common.module->provided->typeName,
+	p_notifying_entry_common_definition->nname.len,
+	p_notifying_entry_common_definition->nname.p_char,
+	p_notifying_entry_common_definition->module->provided->typeNameLen,
+	p_notifying_entry_common_definition->module->provided->typeName);
+  #endif
+
+// ------------------------------------------------------------------------------------------------
+
+  string_t td_string = 
+      SCDEFn_at_ESP32_DeVICE_M->get_formated_date_time_fn(p_notifying_entry_common_definition->p_changed->update_timestamp); 
+
+  printf("List of notifys (common timestamp '%.*s') from definition '%.*s':\n",
+      td_string.len,
+      td_string.p_char,
+      p_notifying_entry_common_definition->nname.len,
+	  p_notifying_entry_common_definition->nname.p_char);
+  free(td_string.p_char);
+   
+  // list currently added notifies stored for processing
+  entry_notify_t *p_current_entry_notify;
+  STAILQ_FOREACH(p_current_entry_notify, &p_notifying_entry_common_definition->p_changed->head_notifies, entries) {
+  	
+      string_t td_string = 
+          SCDEFn_at_ESP32_DeVICE_M->get_formated_date_time_fn(p_current_entry_notify->notify.reading->timestamp);	
+      string_t value_as_text = 
+          p_current_entry_notify->notify.reading->p_reading_type->p_get_raw_reading_as_text_fn(p_current_entry_notify->notify.reading);				
+
+      printf("L  %.*s | %.*s = %.*s\n"
+	      ,td_string.len
+		  ,td_string.p_char
+		  ,p_current_entry_notify->notify.reading->name.len
+		  ,p_current_entry_notify->notify.reading->name.p_char
+		  ,value_as_text.len
+          ,value_as_text.p_char);
+  
+	  free(value_as_text.p_char);
+	  free(td_string.p_char);
+  }
+
+// -------------------------------------------------------------------------------------------------
+
+  return p_entry_ret_msg;
+}
+
+
+
+/**
+ * -------------------------------------------------------------------------------------------------
+ *  FName: ESP32_DeVICE_Rename
+ *  Desc: FN is called when a Definition of this Module was renamed. Module can do further things here. 
+ *  Info: An FN for Rename is optional!
+ *  Para: Entry_ESP32_DeVICE_Definition_t *ESP32_DeVICE_Definition -> ESP32_DeVICE Definition that was renamed
+ *        uint8_t *newName -> ptr to the new name (do we need it???)
+ *        size_t newNameLen -> length of the new name
+ *        uint8_t *oldName -> ptr to old name
+ *        size_t oldNameLen -> length of the old name
+ *  Rets: strTextMultiple_t* -> response text in allocated memory, NULL=no text
+ * -------------------------------------------------------------------------------------------------
+ */
+strTextMultiple_t*
+ESP32_DeVICE_Rename(Common_Definition_t *Common_Definition
+	,uint8_t *newName
+	,size_t newNameLen
+	,uint8_t *oldName
+	,size_t oldNameLen)
+{
+	
+  // for Fn response msg
+  strTextMultiple_t *multipleRetMsg = NULL;
+	
+  // make common ptr to modul specific ptr
+  Entry_ESP32_DeVICE_Definition_t* ESP32_DeVICE_Definition =
+		(Entry_ESP32_DeVICE_Definition_t*) Common_Definition;
+
+// -------------------------------------------------------------------------------------------------
+
+  #if ESP32_DeVICE_Module_DBG >= 5
+  SCDEFn_at_ESP32_DeVICE_M->Log3Fn(Common_Definition->name
+		,Common_Definition->nameLen
+		,5
+		,"Executing RenameFn of Module '%.*s'. "
+		 "An definition is renamed from old name '%.*s' to new name '%.*s'."
+		,ESP32_DeVICE_Definition->common.module->provided->typeNameLen
+		,ESP32_DeVICE_Definition->common.module->provided->typeName
+		,oldName
+		,oldNameLen
+		,newName
+		,newNameLen);
+  #endif
+	
+// -------------------------------------------------------------------------------------------------
+
+  return multipleRetMsg;
+}
+	
 
 
 
@@ -1451,12 +2890,365 @@ int32Slider,a,b,c
 
 
 
+	
 
 
 
 
 
 
+
+/**
+ * -------------------------------------------------------------------------------------------------
+ *  FName: ESP32_DeVICE_Set
+ *  Desc: Processes the device-specific command line arguments from the set command
+ *  Info: Invoked by cmd-line 'Set ESP32_DeVICE_Definition.common.Name setArgs'
+ *  Para: Entry_ESP32_DeVICE_Definition_t *ESP32_DeVICE_Definition -> WebIF Definition that should get a set cmd
+ *        uint8_t *setArgs -> the setArgs
+ *        size_t setArgsLen -> length of the setArgs
+ *  Rets: strTextMultiple_t* -> response text in allocated memory, NULL=no text
+ * -------------------------------------------------------------------------------------------------
+ */
+strTextMultiple_t* ICACHE_FLASH_ATTR
+ESP32_DeVICE_Set(Common_Definition_t* Common_Definition
+	,uint8_t *setArgsText
+	,size_t setArgsTextLen)
+{
+  // for Fn response msg
+  strTextMultiple_t *retMsg = NULL;
+
+  // make common ptr to modul specific ptr
+  Entry_ESP32_DeVICE_Definition_t* ESP32_DeVICE_Definition =
+	(Entry_ESP32_DeVICE_Definition_t*) Common_Definition;
+
+// -------------------------------------------------------------------------------------------------
+
+  #if ESP32_DeVICE_Module_DBG >= 5
+  SCDEFn_at_ESP32_DeVICE_M->Log3Fn(Common_Definition->name
+		,Common_Definition->nameLen
+		,5
+		,"Executing SetFn of Module '%.*s' for Definition '%.*s' with attached args '%.*s'."
+		,ESP32_DeVICE_Definition->common.module->provided->typeNameLen
+		,ESP32_DeVICE_Definition->common.module->provided->typeName
+		,ESP32_DeVICE_Definition->common.nameLen
+		,ESP32_DeVICE_Definition->common.name
+		,setArgsTextLen
+		,setArgsText);
+  #endif
+
+// ------------------------------------------------------------------------------------------------
+
+//args ? here
+
+// ------------------------------------------------------------------------------------------------
+
+  // Parse set-args (KEY=VALUE) protocol -> gets parsedKVInput in allocated mem, NULL = ERROR
+  parsedKVInputArgs_t *parsedKVInput = 
+	SCDEFn_at_ESP32_DeVICE_M->ParseKVInputArgsFn(ESP32_DeVICE_Set_NUMBER_OF_IK	// Num Implementated KEYs MAX
+	,ESP32_DeVICE_Set_ImplementedKeys				// Implementated Keys
+	,setArgsText
+	,setArgsTextLen);
+
+  // parsing may report an problem. args contain: unknown keys, double keys, ...?
+  if (!parsedKVInput) {
+
+	// alloc mem for retMsg
+	retMsg = malloc(sizeof(strTextMultiple_t));
+
+	// response with error text
+	retMsg->strTextLen = asprintf(&retMsg->strText
+		,"Parsing Error! Args '%.*s' not taken! Check the KEYs!"
+		,setArgsTextLen
+		,setArgsText);
+
+	return retMsg;
+  }
+
+// ------------------------------------------------------------------------------------------------
+
+  // set required Keys -> Keys that should be there in this request
+  parsedKVInput->requiredKVBF = 0;/*( (1 << ESP32_SwITCH_SET_GPIO)
+			        | (1 << ESP32_SwITCH_SET_BLOCK)
+			        | (1 << ESP32_SwITCH_SET_CHANNEL)
+			        | (1 << ESP32_SwITCH_SET_TIMER)
+			        | (1 << ESP32_SwITCH_SET_DUTY)
+			        | (1 << ESP32_SwITCH_SET_HPOINT)
+			        | (1 << ESP32_SwITCH_SET_SIG_OUT_EN)
+			        | (1 << ESP32_SwITCH_SET_IDLE_LV)
+			        | (1 << ESP32_SwITCH_SET_RESOLUTION)
+			        | (1 << ESP32_SwITCH_SET_TICK_SOURCE)
+			        | (1 << ESP32_SwITCH_SET_FREQ_HZ) );*/
+
+  // set forbidden Keys -> Keys that are not allowed in this request
+  parsedKVInput->forbiddenKVBF = 0;
+
+  // process the set-args (key=value@) protocol
+  if (ESP32_DeVICE_ProcessKVInputArgs(ESP32_DeVICE_Definition
+	,parsedKVInput
+	,setArgsText
+	,setArgsTextLen) ) {
+
+ 	// Processing reports an problem. Args not taken. Response with error text.
+
+	// alloc mem for retMsg
+	retMsg = malloc(sizeof(strTextMultiple_t));
+
+	// response with error text
+	retMsg->strTextLen = asprintf(&retMsg->strText
+		,"Processing Error! Args '%.*s' not taken! Check the VALUEs!"
+		,setArgsTextLen
+		,setArgsText);
+
+	// free allocated memory for query result key-field
+	free(parsedKVInput);
+
+	return retMsg;
+  }
+
+// ------------------------------------------------------------------------------------------------
+
+  // set affected readings
+ // ESP32_DeVICE_SetAffectedReadings(ESP32_DeVICE_Definition
+//	,parsedKVInput->affectedReadingsBF);
+
+// ------------------------------------------------------------------------------------------------
+
+  // free allocated memory for query result key-field
+  free(parsedKVInput);
+
+  return retMsg;
+}
+
+
+
+/**
+ * --------------------------------------------------------------------------------------------------
+ *  FName: ESP32_DeVICE_Shutdown
+ *  Desc: called after 
+ *  Info: Invoked by cmd-line 'Undefine ESP32_DeVICE_Definition.common.Name'
+ *  Para: Entry_ESP32_DeVICE_Definition_t *ESP32_DeVICE_Definition -> WebIF Definition that should be removed
+ *  Rets: strTextMultiple_t* -> response text NULL=no text
+ * --------------------------------------------------------------------------------------------------
+ */
+strTextMultiple_t* ICACHE_FLASH_ATTR
+ESP32_DeVICE_Shutdown(Common_Definition_t* Common_Definition)
+{
+
+  // for Fn response msg
+  strTextMultiple_t *retMsg = NULL;
+
+  // make common ptr to modul specific ptr
+  Entry_ESP32_DeVICE_Definition_t* ESP32_DeVICE_Definition =
+	(Entry_ESP32_DeVICE_Definition_t*) Common_Definition;
+
+// -------------------------------------------------------------------------------------------------
+
+  #if ESP32_DeVICE_Module_DBG >= 5
+  SCDEFn_at_ESP32_DeVICE_M->Log3Fn(Common_Definition->name
+	,Common_Definition->nameLen
+	,5
+	,"Executing ShutdownFn of Module '%.*s' for Definition '%.*s'."
+	,ESP32_DeVICE_Definition->common.module->provided->typeNameLen
+	,ESP32_DeVICE_Definition->common.module->provided->typeName
+		,ESP32_DeVICE_Definition->common.nameLen
+	,ESP32_DeVICE_Definition->common.name);
+  #endif
+
+// -------------------------------------------------------------------------------------------------
+
+  // 8. Wi-Fi Deinit Phase
+
+  // s8.1: Call esp_wifi_disconnect() to disconnect the Wi-Fi connectivity.
+  esp_wifi_disconnect();
+
+  // s8.2: Call esp_wifi_stop() to stop the Wi-Fi driver.
+  esp_wifi_stop();
+
+  // s8.3: Call esp_wifi_deinit() to unload the Wi-Fi driver.
+  esp_wifi_deinit();
+
+  return retMsg;
+}
+
+
+
+/**
+ * -------------------------------------------------------------------------------------------------
+ *  FName: ESP32_DeVICE_State
+ *  Desc: FN is called when a Definition of this Module gets, and should set an state update. 
+ *        Normally called from setstate cmd when executing state (=readings?) recovery from save .cfg
+ *  Info: An FN for State in an Module is optional!
+ *  Para: const Common_Definition_t *ESP32_DeVICE_Definition -> Definition that should execute an status update
+ *        const time_t stateTiSt -> time stamp for status update / reading value
+ *        const String_t stateNameString -> state Name for status update / reading value
+ *        const String_t stateValueString -> state Value for the status update / reading value
+ *        const String_t stateMimeString -> state Mime for the status update / reading value
+ *  Rets: Entry_String_t* -> singly linked tail queue element which stores one xString_t string
+ *                                  as response text in allocated memory. NULL=no response text
+ * -------------------------------------------------------------------------------------------------
+ */
+Entry_String_t*
+ESP32_DeVICE_State(Common_Definition_t *Common_Definition
+	,const time_t stateTiSt
+	,const String_t stateNameString
+	,const String_t stateValueString
+	,const String_t stateMimeString)
+{
+  // Fn return message. NULL = no return message
+  Entry_String_t *retMsg_Entry_String = NULL;
+	
+  // make common ptr to modul specific ptr
+  Entry_ESP32_DeVICE_Definition_t* ESP32_DeVICE_Definition =
+		(Entry_ESP32_DeVICE_Definition_t*) Common_Definition;
+
+// -------------------------------------------------------------------------------------------------
+
+  #if ESP32_DeVICE_Module_DBG >= 5
+  // prepare TiSt-string for LogFn
+  string_t timeString =
+  	SCDEFn_at_ESP32_DeVICE_M->get_formated_date_time_fn(stateTiSt);
+
+  SCDEFn_at_ESP32_DeVICE_M->Log3Fn(Common_Definition->name
+	,Common_Definition->nameLen
+	,5
+	,"Executing StateFn of Module '%.*s' for Definition '%.*s'. "
+         "Should set State for '%.*s' with Value '%.*s' and Mime '%.*s'. TimeStamp '%.*s'."
+	,ESP32_DeVICE_Definition->common.module->provided->typeNameLen
+	,ESP32_DeVICE_Definition->common.module->provided->typeName
+	,Common_Definition->nameLen
+	,Common_Definition->name
+	,stateNameString.len
+	,stateNameString.p_char
+	,stateValueString.len
+	,stateValueString.p_char
+	,stateMimeString.len
+	,stateMimeString.p_char
+	,timeString.len
+	,timeString.p_char);
+
+  // free TiSt-string from LogFn
+  free(timeString.p_char);
+  #endif
+
+/*
+// ------------------------------------------------------------------------------------------------
+
+  // build an temp KEY=VALUE string
+  xString_t argsString;
+
+  // check if there is a KEY
+  if (!stateNameString.length) {
+
+	// alloc mem for the singly linked tail queue element that stores the Return Message
+	retMsg_Entry_String = 
+		malloc(sizeof(xMultipleStringSLTQE_t));
+
+	// fill Return Message with error text
+	retMsg_Entry_String->string.length = 
+		asprintf(&retMsg_Entry_String->string.characters
+			,"Error in StateFn! Fn called without State Name");
+
+	return retMsg_Entry_String;
+  }
+
+  argsString.length = 
+	asprintf(&argsString.characters
+		,"%.*s=%.*s"
+		,stateNameString.length
+		,stateNameString.characters
+		,stateValueString.length
+		,stateValueString.characters);
+
+// ------------------------------------------------------------------------------------------------
+
+  // Parse State-Args (KEY=VALUE) protocol -> gets parsedKVInput in allocated mem, NULL = ERROR
+  parsedKVInputArgs_t *parsedKVInput = 
+	SCDEFn_at_ESP32_DeVICE_M->ParseKVInputArgsFn(ESP32_DeVICE_Set_NUMBER_OF_IK	// Num Implementated KEYs MAX
+		,ESP32_DeVICE_Set_ImplementedKeys			// Implementated Keys
+		,argsString.characters
+		,argsString.length);
+
+  // NULL? Parsing reports an problem. args contain: unknown keys, double keys, ...?
+  if (!parsedKVInput) {
+
+	// alloc mem for the singly linked tail queue element that stores the Return Message
+	retMsg_Entry_String = 
+		malloc(sizeof(xMultipleStringSLTQE_t));
+
+	// fill Return Message with error text
+	retMsg_Entry_String->string.length = 
+		asprintf(&retMsg_Entry_String->string.characters
+			,"Parsing Error! Args '%.*s' not taken! Check the KEYs!"
+			,argsString.length
+			,argsString.characters);
+
+	// free the temp KEY=VALUE string
+	if (argsString.characters) free (argsString.characters);
+
+	return retMsg_Entry_String;
+  }
+
+// -------------------------------------------------------------------------------------------------
+
+  // free allocated memory for query result key-field
+  free(parsedKVInput);
+
+  // free the temp KEY=VALUE string
+  if (argsString.characters) free (argsString.characters);
+*/
+  return retMsg_Entry_String;
+}
+
+
+
+/** TEXT IST FALSCH!!!!!!!!!!
+ * --------------------------------------------------------------------------------------------------
+ *  FName: ESP32_DeVICE_Undefine
+ *  Desc: Removes the define of an "device" of 'WebIF' type. Contains devicespecific init code.
+ *  Info: Invoked by cmd-line 'Undefine ESP32_DeVICE_Definition.common.Name'
+ *  Para: Entry_ESP32_DeVICE_Definition_t *ESP32_DeVICE_Definition -> Definition that should be removed
+ *  Rets: strTextMultiple_t* -> response text in allocated memory, NULL=no text
+ * --------------------------------------------------------------------------------------------------
+ */
+strTextMultiple_t* ICACHE_FLASH_ATTR
+ESP32_DeVICE_Undefine(Common_Definition_t* Common_Definition)
+  {
+
+  // for Fn response msg
+  strTextMultiple_t *retMsg = NULL;
+
+  // make common ptr to modul specific ptr
+  Entry_ESP32_DeVICE_Definition_t* ESP32_DeVICE_Definition =
+	(Entry_ESP32_DeVICE_Definition_t*) Common_Definition;
+
+// -------------------------------------------------------------------------------------------------
+
+  #if ESP32_DeVICE_Module_DBG >= 5
+  SCDEFn_at_ESP32_DeVICE_M->Log3Fn(Common_Definition->name
+		,Common_Definition->nameLen
+		,5
+		,"Executing UndefineFn of Module '%.*s' for Definition '%.*s'."
+		,ESP32_DeVICE_Definition->common.module->provided->typeNameLen
+		,ESP32_DeVICE_Definition->common.module->provided->typeName
+		,ESP32_DeVICE_Definition->common.nameLen
+		,ESP32_DeVICE_Definition->common.name);
+  #endif
+
+// -------------------------------------------------------------------------------------------------
+
+  // response with error text
+
+  // alloc mem for retMsg
+  retMsg = malloc(sizeof(strTextMultiple_t));
+
+  // response with error text
+  retMsg->strTextLen = asprintf(&retMsg->strText
+	,"ESP32_DeVICE_Set, Name:%.*s"
+	,ESP32_DeVICE_Definition->common.nameLen
+	,ESP32_DeVICE_Definition->common.name);
+
+  return retMsg;
+}
 
 
 
@@ -1468,7 +3260,7 @@ int32Slider,a,b,c
  *  Rets: -/-
  * --------------------------------------------------------------------------------------------------
  */
-esp_err_t
+static esp_err_t
 ESP32_DeVICE_WiFiEventHandler(void *ctx, system_event_t *event)
 {
   switch (event->event_id)
@@ -1547,8 +3339,8 @@ ESP32_DeVICE_WiFiEventHandler(void *ctx, system_event_t *event)
 	// system_event_sta_disconnected_t;
 
 	// This is a workaround as ESP32 WiFi libs don't currently auto-reassociate
-//	esp_wifi_connect();
-//	xEventGroupClearBits(wifi_event_group, CONNECTED_BIT);
+	esp_wifi_connect();
+	xEventGroupClearBits(wifi_event_group, CONNECTED_BIT);
 
 	SCDEFn_at_ESP32_DeVICE_M->Log3Fn( (const uint8_t*)"xxx"
 		, sizeof("xxx")
@@ -1588,7 +3380,7 @@ ESP32_DeVICE_WiFiEventHandler(void *ctx, system_event_t *event)
 	// system_event_sta_got_ip_t;
 
 	// ??
-//	xEventGroupSetBits(wifi_event_group, CONNECTED_BIT);
+	xEventGroupSetBits(wifi_event_group, CONNECTED_BIT);
 
 	SCDEFn_at_ESP32_DeVICE_M->Log3Fn( (const uint8_t*)"xxx"
 		, sizeof("xxx")
@@ -1694,6 +3486,80 @@ ESP32_DeVICE_WiFiEventHandler(void *ctx, system_event_t *event)
 
 
 
+
+#include "esp_sntp.h"
+
+//#include "sntp.h"
+//#include "lwip/include/apps/sntp/sntp.h"
+
+//#include "apps/sntp/sntp.h"
+
+
+static void 
+Initialize_SNTP(void)
+{
+  printf ("Initializing SNTP");
+
+  sntp_setoperatingmode(SNTP_OPMODE_POLL);
+
+  sntp_setservername(0, "pool.ntp.org");
+
+  sntp_init();
+}
+
+
+
+
+
+static void
+Obtain_Time(void)
+{
+  Initialize_SNTP();
+
+  // wait for time to be set
+  time_t now = 0;
+
+  struct tm timeinfo = { 0 };
+
+  int retry = 0;
+
+  const int retry_count = 10;
+
+  while (timeinfo.tm_year < (2016 - 1900) && ++retry < retry_count) {
+
+	printf ("Waiting for system time to be set... (%d/%d)",
+		retry,
+		retry_count);
+
+	vTaskDelay(2000 / portTICK_PERIOD_MS);
+
+	time(&now);
+
+	localtime_r(&now, &timeinfo);
+  }
+}
+
+
+
+/*
+
+  time_t now;
+      struct tm timeinfo;
+      time(&now);
+      localtime_r(&now, &timeinfo);
+
+      char strftime_buf[64];
+
+      // Set timezone to Eastern Standard Time and print local time
+         setenv("TZ", "EST5EDT,M3.2.0/2,M11.1.0", 1);
+         tzset();
+         localtime_r(&now, &timeinfo);
+         strftime(strftime_buf, sizeof(strftime_buf), "%c", &timeinfo);
+         LOGD("New York is: %s"
+        	,strftime_buf);
+*/
+
+ 
 
 
 
